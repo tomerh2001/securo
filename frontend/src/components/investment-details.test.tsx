@@ -138,3 +138,17 @@ describe('investment activity', () => {
     expect(screen.queryByText(/500.00/)).not.toBeInTheDocument()
   })
 })
+
+it('keeps report periods separate and hides cleared activity from the normal view', async () => {
+  vi.mocked(assets.activities).mockResolvedValue([{ ...activity, amount: 0, description: 'Cleared contribution' }])
+  const value = details({ report_summaries: [
+    { id: 'report-one', title: 'Year to date', fromDate: '2026-01-01', toDate: '2026-08-31', lines: [{ label: 'Reported fee', amount: '42.00' }] },
+    { id: 'report-two', title: 'Lifetime', fromDate: null, toDate: '2026-08-31', lines: [{ label: 'Reported return', amount: '-11.00' }] },
+  ] })
+  renderWithProviders(<InvestmentProductDetails asset={{ id: 'pension-example', currency: 'ILS', investment_details: value }} />)
+  expect(screen.getByText('Year to date')).toBeInTheDocument()
+  expect(screen.getByText('Lifetime')).toBeInTheDocument()
+  expect(screen.getAllByRole('table')).toHaveLength(2)
+  expect(await screen.findByText(/No activity records were supplied/)).toBeInTheDocument()
+  expect(screen.queryByText('Cleared contribution')).not.toBeInTheDocument()
+})

@@ -140,6 +140,12 @@ async def sync_feed(session: AsyncSession, connection: BankConnection, feed: Inv
             "valuation_date": latest.date.isoformat() if latest and latest.source_as_of_verified else None,
             "observed_at": latest.observed_at.isoformat() if latest and latest.observed_at else None,
         }
+        previous_reports = (asset.external_metadata or {}).get("investment_details", {}).get("report_summaries")
+        if previous_reports is not None or product.reportSummaries is not None:
+            reports = {report["id"]: report for report in previous_reports or []}
+            for report in product.reportSummaries or []:
+                reports[report.id] = report.model_dump(mode="json")
+            details["report_summaries"] = [reports[key] for key in sorted(reports)]
         asset.external_metadata = {"current_valuation_id": current_id, "investment_details": details}
 
         activity_rows = list((await session.scalars(select(AssetActivity).where(

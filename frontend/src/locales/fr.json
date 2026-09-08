@@ -2332,6 +2332,12 @@
     "providerValue": "Provider balance",
     "observationDate": "Observation date; valuation date unknown",
     "accountBalances": "Account balances",
-    "projectedNetWorth": "Projected net worth"
+    "projectedNetWorth": "Projected net worth",
+    "reportSummaries": "Provider period summaries",
+    "reportSummariesHint": "These reports show contributions, fees, insurance costs and returns reported by Clal. Overlapping periods are shown separately and are not added to transactions or net worth.",
+    "reportPeriod": "{{from}} – {{to}}",
+    "reportFrom": "From {{date}}",
+    "reportThrough": "Through {{date}}",
+    "reportPeriodUnknown": "Reporting period not supplied"
   }
 }

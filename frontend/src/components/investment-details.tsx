@@ -107,6 +107,38 @@ export function InvestmentProductDetails({ asset }: { asset: Pick<Asset, 'id' | 
           </ul>
         )}
       </div>
+      {details.report_summaries && details.report_summaries.length > 0 && (
+        <section className="space-y-3" aria-label={t('investments.reportSummaries')}>
+          <h4 className="text-xs font-semibold">{t('investments.reportSummaries')}</h4>
+          <p className="text-xs text-muted-foreground">{t('investments.reportSummariesHint')}</p>
+          {details.report_summaries.map(report => (
+            <div key={report.id} className="overflow-x-auto rounded-lg border border-border">
+              <table className="w-full text-sm text-left">
+                <caption className="px-3 py-2 text-left bg-muted/30">
+                  <span className="font-medium" dir="auto">{report.title}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {report.fromDate && report.toDate
+                      ? t('investments.reportPeriod', { from: formatDate(report.fromDate), to: formatDate(report.toDate) })
+                      : report.fromDate
+                        ? t('investments.reportFrom', { date: formatDate(report.fromDate) })
+                        : report.toDate
+                          ? t('investments.reportThrough', { date: formatDate(report.toDate) })
+                          : t('investments.reportPeriodUnknown')}
+                  </span>
+                </caption>
+                <tbody className="divide-y divide-border">
+                  {report.lines.map((line, index) => (
+                    <tr key={`${line.label}:${index}`}>
+                      <th scope="row" className="px-3 py-2 font-normal" dir="auto">{line.label}</th>
+                      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">{mask(formatCurrency(Number(line.amount), asset.currency, locale))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </section>
+      )}
       <InvestmentActivities assetId={asset.id} />
     </section>
   )
@@ -122,7 +154,7 @@ export function InvestmentActivities({ assetId, allowedAssetIds }: { assetId?: s
     queryKey: ['asset-activities', assetId],
     queryFn: () => assets.activities(assetId),
   })
-  const rows = (data ?? []).filter(row => !allowedAssetIds || allowedAssetIds.includes(row.asset_id))
+  const rows = (data ?? []).filter(row => row.amount !== 0 && (!allowedAssetIds || allowedAssetIds.includes(row.asset_id)))
   return (
     <section className="space-y-3" aria-label={t('investments.activities')}>
       <h3 className="text-sm font-semibold">{t('investments.activities')}</h3>

@@ -803,6 +803,7 @@ export interface InvestmentDetails {
   coverage: { valuations: 'complete' | 'partial' | 'unavailable'; activities: 'complete' | 'partial' | 'unavailable'; tracks: 'complete' | 'partial' | 'unavailable' }
   forecast: { monthlyPension: string; currency: string; asOf: string | null } | null
   tracks: InvestmentTrack[]
+  report_summaries?: InvestmentReportSummary[]
   source: {
     provider: string
     status: 'ok' | 'partial' | 'auth_required' | 'error' | 'never_synced'
@@ -814,6 +815,14 @@ export interface InvestmentDetails {
   }
   valuation_date: string | null
   observed_at: string | null
+}
+
+export interface InvestmentReportSummary {
+  id: string
+  title: string
+  fromDate: string | null
+  toDate: string | null
+  lines: { label: string; amount: string }[]
 }
 
 export interface InvestmentTrack {

@@ -298,3 +298,24 @@ async def test_connection_pipeline_does_not_run_generic_holdings(session, test_u
         await _sync_holdings(session, test_user.id, conn, conn.credentials)
     assert await session.scalar(select(func.count()).select_from(AssetValue)) == 1
     provider.get_holdings.assert_not_called()
+
+
+async def test_report_corrections_retention_and_zero_activity_do_not_change_wealth(session, test_user, test_workspace):
+    conn = await connection(session, test_user, test_workspace)
+    data = payload()
+    report = {"id": "period:2026", "title": "Reported period", "fromDate": "2026-01-01", "toDate": "2026-08-31",
+              "lines": [{"label": "Management fees", "amount": "100.00"}, {"label": "Reported return", "amount": "-25.00"}]}
+    data["products"][0]["reportSummaries"] = [report]
+    await sync_feed(session, conn, InvestmentFeed.model_validate(data))
+    report["lines"][0]["amount"] = "90.00"
+    data["activities"][0]["amount"] = "0.00"
+    await sync_feed(session, conn, InvestmentFeed.model_validate(data))
+    del data["products"][0]["reportSummaries"]
+    await sync_feed(session, conn, InvestmentFeed.model_validate(data))
+    asset = await session.scalar(select(Asset))
+    assert asset.external_metadata["investment_details"]["report_summaries"][0]["lines"][0]["amount"] == "90.00"
+    assert await session.scalar(select(func.count()).select_from(AssetValue)) == 1
+    assert (await session.scalar(select(AssetValue))).amount == Decimal("10000")
+    assert await session.scalar(select(func.count()).select_from(AssetActivity)) == 1
+    assert (await session.scalar(select(AssetActivity))).amount == Decimal("0")
+    assert await session.scalar(select(func.count()).select_from(Transaction)) == 0

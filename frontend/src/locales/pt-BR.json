@@ -2332,6 +2332,12 @@
     "providerValue": "Saldo do provedor",
     "observationDate": "Data de observação; data de avaliação desconhecida",
     "accountBalances": "Saldos das contas",
-    "projectedNetWorth": "Patrimônio líquido projetado"
+    "projectedNetWorth": "Patrimônio líquido projetado",
+    "reportSummaries": "Provider period summaries",
+    "reportSummariesHint": "These reports show contributions, fees, insurance costs and returns reported by Clal. Overlapping periods are shown separately and are not added to transactions or net worth.",
+    "reportPeriod": "{{from}} – {{to}}",
+    "reportFrom": "From {{date}}",
+    "reportThrough": "Through {{date}}",
+    "reportPeriodUnknown": "Reporting period not supplied"
   }
 }

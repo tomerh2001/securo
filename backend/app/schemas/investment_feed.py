@@ -60,6 +60,30 @@ class PensionForecast(FeedModel):
         return value
 
 
+class InvestmentReportLine(FeedModel):
+    label: Annotated[str, Field(min_length=1, max_length=500)]
+    amount: str
+
+    @field_validator("amount")
+    @classmethod
+    def validate_amount(cls, value):
+        return exact_money(value)
+
+
+class InvestmentReportSummary(FeedModel):
+    id: Identifier
+    title: Annotated[str, Field(min_length=1, max_length=255)]
+    fromDate: Date | None
+    toDate: Date | None
+    lines: list[InvestmentReportLine]
+
+    @model_validator(mode="after")
+    def validate_period(self):
+        if self.fromDate is not None and self.toDate is not None and self.fromDate > self.toDate:
+            raise ValueError("Report period must not end before it begins")
+        return self
+
+
 class InvestmentProduct(FeedModel):
     id: Identifier
     provider: Literal["clal"]
@@ -71,6 +95,13 @@ class InvestmentProduct(FeedModel):
     currentValuationId: Identifier | None
     coverage: ProductCoverage
     forecast: PensionForecast | None
+    reportSummaries: list[InvestmentReportSummary] | None = None
+
+    @model_validator(mode="after")
+    def validate_report_ids(self):
+        if self.reportSummaries is not None and len({report.id for report in self.reportSummaries}) != len(self.reportSummaries):
+            raise ValueError("Duplicate report identity")
+        return self
 
 
 class InvestmentValuation(FeedModel):
