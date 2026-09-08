@@ -153,7 +153,7 @@ export default function ConnectionDetailPage() {
       </>}
         </TabsContent>
         <TabsContent value="health" id="connection-health" className="space-y-5">
-          {sourceRefresh ? <ConnectionHealth connection={connection} /> : <section className="rounded-xl border border-border bg-card p-5 space-y-4">
+          {sourceRefresh ? <ConnectionHealth key={connection.id} connection={connection} onReconnect={reconnect} /> : <section className="rounded-xl border border-border bg-card p-5 space-y-4">
             <h2 className="font-semibold">{t(needsReconnect ? 'connectionHealth.signInTitle' : 'connectionHealth.savedDataTitle')}</h2>
             <p className="text-sm text-muted-foreground">{t(needsReconnect ? 'connectionHealth.reconnectHelp' : 'connectionHealth.savedDataHelp')}</p>
             <p className="text-sm"><span className="text-muted-foreground">{t('connectionHealth.inSecuro')}: </span>{connection.last_sync_at ? new Date(connection.last_sync_at).toLocaleString(locale) : t('connectionHealth.notYet')}</p>
