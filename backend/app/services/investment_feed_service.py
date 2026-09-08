@@ -35,13 +35,27 @@ async def sync_feed(session: AsyncSession, connection: BankConnection, feed: Inv
     # before this lock, so reject a response older than the one already applied.
     await session.execute(select(BankConnection).where(BankConnection.id == connection.id)
                           .with_for_update().execution_options(populate_existing=True))
-    previous_generated_at = (connection.settings or {}).get("investment_feed_generated_at")
-    if previous_generated_at and _utc(datetime.fromisoformat(previous_generated_at)) > _utc(feed.generatedAt):
-        return
     source = connection.provider
     existing = list((await session.scalars(select(Asset).where(
         Asset.workspace_id == connection.workspace_id, Asset.source == source,
     ))).all())
+    # A collector endpoint can be reconfigured, but an existing connection must
+    # never relabel its saved products as another provider. Older connections
+    # may only have the source identity on their owned assets.
+    recorded_sources = [(connection.settings or {}).get("investment_source")]
+    recorded_sources.extend(
+        ((asset.external_metadata or {}).get("investment_details") or {}).get("source")
+        for asset in existing if asset.connection_id == connection.id
+    )
+    for recorded_source in recorded_sources:
+        if not isinstance(recorded_source, dict):
+            continue
+        provider = recorded_source.get("provider")
+        if isinstance(provider, str) and provider and provider != feed.source.provider:
+            raise ValueError("Investment connection provider changed; use a separate connection")
+    previous_generated_at = (connection.settings or {}).get("investment_feed_generated_at")
+    if previous_generated_at and _utc(datetime.fromisoformat(previous_generated_at)) > _utc(feed.generatedAt):
+        return
     by_external = {asset.external_id: asset for asset in existing}
     source_details = feed.source.model_dump(mode="json")
     connection.settings = {

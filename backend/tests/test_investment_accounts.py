@@ -126,6 +126,50 @@ async def test_second_provider_uses_same_contract_and_separate_identity(
     assert await session.scalar(select(func.count()).select_from(Transaction)) == 0
 
 
+@pytest.mark.parametrize("recorded_identity", ["settings", "assets", "conflicting_assets"])
+@pytest.mark.parametrize("empty_response", [False, True])
+async def test_connection_provider_change_is_rejected_before_any_mutation(
+    session, test_user, test_workspace, recorded_identity, empty_response,
+):
+    conn, asset = await seed_account(session, test_user, test_workspace)
+    if recorded_identity == "settings":
+        metadata = copy.deepcopy(asset.external_metadata)
+        metadata["investment_details"].pop("source")
+        asset.external_metadata = metadata
+    elif recorded_identity == "assets":
+        conn.settings = {key: value for key, value in conn.settings.items() if key != "investment_source"}
+    else:
+        # Even if connection settings were changed, its saved products retain
+        # their provider identity and cannot be relabeled by the next pull.
+        conn.settings = {**conn.settings, "investment_source": {"provider": "migdal"}}
+    await session.flush()
+
+    async def snapshot():
+        return (
+            copy.deepcopy(conn.settings),
+            (await session.execute(select(Asset.id, Asset.name, Asset.connection_id,
+                                          Asset.group_id, Asset.external_metadata))).all(),
+            (await session.execute(select(AssetGroup.id, AssetGroup.external_id, AssetGroup.name))).all(),
+            (await session.execute(select(AssetValue.id, AssetValue.amount, AssetValue.date))).all(),
+            (await session.execute(select(AssetActivity.id, AssetActivity.amount, AssetActivity.date))).all(),
+            await session.scalar(select(func.count()).select_from(Account)),
+            await session.scalar(select(func.count()).select_from(Transaction)),
+        )
+
+    before = await snapshot()
+    data = provider_payload("migdal")
+    data["products"][0]["name"] = "A different provider account"
+    data["valuations"][0]["amount"] = "99999.00"
+    if empty_response:
+        data.update(products=[], valuations=[], activities=[], tracks=[])
+        # Source changes must also fail before the stale-response early return.
+        data["generatedAt"] = "2026-09-07T10:00:00Z"
+    with pytest.raises(ValueError, match="Investment connection provider changed"):
+        await sync_feed(session, conn, InvestmentFeed.model_validate(data))
+    await session.flush()
+    assert await snapshot() == before
+
+
 async def test_missing_foreign_and_non_investment_ids_are_not_accessible(
     session, test_user, test_workspace, client, auth_headers,
 ):
