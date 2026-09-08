@@ -11,6 +11,7 @@ import type {
   CategoryRuleUsage,
   CategoryGroup,
   BankConnection,
+  ConnectionSourceStatus,
   ConnectionSettings,
   Account,
   AccountSummary,
@@ -351,7 +352,7 @@ export const connections = {
     const { data } = await api.get('/connections')
     return data
   },
-  getProviders: async (): Promise<{ name: string; display_name: string; description: string; flow_type: string; configured: boolean; requires_institution_select?: boolean; supports_asset_sync?: boolean }[]> => {
+  getProviders: async (): Promise<{ name: string; display_name: string; description: string; flow_type: string; configured: boolean; requires_institution_select?: boolean; supports_asset_sync?: boolean; supports_source_refresh?: boolean }[]> => {
     const { data } = await api.get('/connections/providers')
     return data.providers
   },
@@ -406,6 +407,14 @@ export const connections = {
   },
   sync: async (id: string): Promise<BankConnection> => {
     const { data } = await api.post(`/connections/${id}/sync`)
+    return data
+  },
+  sourceStatus: async (id: string): Promise<ConnectionSourceStatus> => {
+    const { data } = await api.get(`/connections/${id}/source/status`)
+    return data
+  },
+  refreshSource: async (id: string): Promise<{ result: 'started' | 'already_running'; retryAfterSeconds: number }> => {
+    const { data } = await api.post(`/connections/${id}/source/refresh`)
     return data
   },
   getReconnectToken: async (connectionId: string): Promise<string> => {

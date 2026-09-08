@@ -24,6 +24,7 @@ KNOWN_PROVIDERS = [
         "flow_type": "token",
         "requires_institution_select": False,
         "supports_asset_sync": True,
+        "supports_source_refresh": True,
     },
     {
         "name": "pluggy",

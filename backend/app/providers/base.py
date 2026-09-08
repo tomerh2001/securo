@@ -4,6 +4,8 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal, Optional
 
+from app.schemas.connection_source import CollectorControlStatus, SourceRefreshResult
+
 
 # Outcome of asking a provider to pull fresh data from the underlying institution
 # before we read accounts/transactions.
@@ -233,6 +235,16 @@ class ProviderNotConfiguredError(Exception):
     """
 
 
+class SourceControlError(Exception):
+    """A fixed, safe source-control failure; never wraps upstream exception text."""
+
+    def __init__(self, code: str, *, status_code: int = 503, retry_after_seconds: int = 0):
+        self.code = code
+        self.status_code = status_code
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__(code)
+
+
 class FxRateProvider(ABC):
     """Abstract interface for FX rate providers."""
 
@@ -270,6 +282,19 @@ class BankProvider(ABC):
     def flow_type(self) -> str:
         """Connection flow type: 'oauth' for redirect-based, 'widget' for embedded widget."""
         return "oauth"
+
+    @property
+    def supports_source_refresh(self) -> bool:
+        """Whether this integration offers explicit institution collection controls."""
+        return False
+
+    async def get_source_status(self, credentials: dict) -> CollectorControlStatus:
+        raise SourceControlError("source_controls_unsupported", status_code=400)
+
+    async def request_source_refresh(
+        self, credentials: dict, expected_provider: str,
+    ) -> SourceRefreshResult:
+        raise SourceControlError("source_controls_unsupported", status_code=400)
 
     @property
     def redirect_uri(self) -> str:

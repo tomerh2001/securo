@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     simplefin_api_url: str = "https://beta-bridge.simplefin.org"
     investment_feed_enabled: bool = False
     investment_feed_url: str = ""
+    # Separate from each connection's read token. Only the server can request
+    # provider collection; clients cannot configure an endpoint or this capability.
+    investment_feed_control_token: SecretStr = SecretStr("")
+    investment_feed_control_token_file: str = ""
 
     # Frontend
     frontend_url: str = "http://localhost:5173"

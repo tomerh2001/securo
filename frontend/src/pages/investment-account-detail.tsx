@@ -149,7 +149,7 @@ export default function InvestmentAccountDetailPage() {
   const sourceState = investmentSourceState([account])
   const needsAttention = sourceState !== 'current'
   const notice = {
-    signInRequired: t('investmentAccounts.signInNeeded', { defaultValue: 'Connection needs attention. Showing the last available balance.' }),
+    signInRequired: t('connectionHealth.signInNotice', { defaultValue: 'Sign-in verification is required to update these accounts. Your saved balances are still available.' }),
     unavailable: t('investmentAccounts.updateFailed', { defaultValue: 'The latest update failed. Showing the last available balance.' }),
     neverSynced: t('investmentAccounts.waitingForUpdate', { defaultValue: 'Waiting for the first update.' }),
     partial: t('investmentAccounts.partialUpdate', { defaultValue: 'Some account information is missing.' }),
@@ -168,7 +168,7 @@ export default function InvestmentAccountDetailPage() {
       </header>
       {needsAttention && <div role="status" className="flex items-start gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 p-4 text-sm">
         <Info size={16} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
-        <div className="space-y-1"><p>{notice}</p>{accountsEnabled && account.connection_id && <Link className="inline-block text-xs text-muted-foreground hover:text-foreground underline underline-offset-4" to={`/connections/${account.connection_id}`}>{t('investmentAccounts.connectionDetails', { defaultValue: 'Connection details' })}</Link>}</div>
+        <div className="space-y-1"><p>{notice}</p>{accountsEnabled && account.connection_id && <Link className="inline-block text-xs text-muted-foreground hover:text-foreground underline underline-offset-4" to={`/connections/${account.connection_id}#connection-health`}>{t('connectionHealth.fixConnection', { defaultValue: 'Fix connection' })}</Link>}</div>
       </div>}
       <section className="rounded-xl border border-border bg-card p-5 sm:p-6" aria-label={t('investmentAccounts.currentBalance', { defaultValue: 'Current balance' })}>
         <p className="text-sm text-muted-foreground">{t('investmentAccounts.currentBalance', { defaultValue: 'Current balance' })}</p>

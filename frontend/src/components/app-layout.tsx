@@ -1,8 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
-import { getAccountName } from '@/lib/account-utils'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
@@ -14,7 +12,7 @@ import { OnboardingTour } from '@/components/onboarding-tour'
 import { useTheme } from 'next-themes'
 import { accounts as accountsApi, connections as connectionsApi, investmentAccounts as investmentAccountsApi } from '@/lib/api'
 import { filterInvestmentAccounts } from '@/lib/investment-account-utils'
-import { getConnectionName } from '@/lib/connection-utils'
+import { AccountNavigationLinks } from '@/components/account-navigation-links'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -38,7 +36,6 @@ import { WorkspaceSwitcher } from '@/components/workspace-switcher'
 import { navItems, visibleNavItems, type NavItem } from '@/lib/nav-items'
 import {
   Menu,
-  ChevronRight,
   Eye,
   EyeOff,
   Sun,
@@ -63,7 +60,6 @@ import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { Bot, Search, Sparkles } from 'lucide-react'
 import { setThemeBasedOnSystem } from '@/lib/theme-utils'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
-import { formatCurrency } from '@/lib/format'
 
 /** Placeholder rows shown while the workspace's module list is in flight. */
 function NavSkeleton() {
@@ -90,14 +86,10 @@ export function AppLayout() {
   const { t } = useTranslation()
   const { user, logout, updateUser } = useAuth()
   const { activeAccountIds, activeWalletIds } = useCollectionFilter()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
-  const locale = useDisplayLocale()
   const { theme, setTheme, resolvedTheme } = useTheme()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [accountsExpanded, setAccountsExpanded] = useState(true)
-  const [accountsShowAll, setAccountsShowAll] = useState(false)
-  const { privacyMode, togglePrivacyMode, mask } = usePrivacyMode()
+  const { privacyMode, togglePrivacyMode } = usePrivacyMode()
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const [passkeysOpen, setPasskeysOpen] = useState(false)
@@ -183,6 +175,7 @@ export function AppLayout() {
   const { data: accountsList } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accountsApi.list(),
+    enabled: hasModule('accounts'),
   })
 
   const { data: investmentAccountsList } = useQuery({
@@ -196,20 +189,12 @@ export function AppLayout() {
     enabled: hasModule('accounts'),
   })
   const visibleInvestments = filterInvestmentAccounts(hasModule('assets') ? investmentAccountsList ?? [] : [], activeWalletIds)
-  const investmentConnections = (connectionsList ?? []).map(connection => ({
-    connection,
-    accounts: visibleInvestments.filter(account => account.connection_id === connection.id),
-  })).filter(group => group.accounts.length > 0)
-
-  const allAccounts = accountsList ?? []
-  // When a collection is active, the sidebar list + total reflect only its
-  // accounts (issue #105). null = all accounts.
-  const visibleAccounts = activeAccountIds
-    ? allAccounts.filter((a) => activeAccountIds.includes(a.id))
-    : allAccounts
-  const totalBalance = visibleAccounts.reduce((sum, a) => {
-    return sum + Number(a.balance_primary ?? a.current_balance)
-  }, 0)
+  const visibleAccounts = (accountsList ?? []).filter(account => !account.is_closed
+    && (activeAccountIds === null || activeAccountIds.includes(account.id)))
+  const collectionIsActive = activeAccountIds !== null || activeWalletIds !== null
+  const visibleConnections = (connectionsList ?? []).filter(connection => !collectionIsActive
+    || visibleAccounts.some(account => account.connection_id === connection.id)
+    || visibleInvestments.some(account => account.connection_id === connection.id))
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
 
   return (
@@ -427,86 +412,14 @@ export function AppLayout() {
                   />
                   <span>{t(`nav.${item.key}`)}</span>
                 </Link>
-                {item.path === '/accounts' && investmentConnections.map(({ connection, accounts: investments }) => <Link
-                  key={connection.id} to={`/connections/${connection.id}`} onClick={() => setSidebarOpen(false)}
-                  className={cn('ml-8 mt-0.5 flex min-w-0 items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground', (location.pathname === `/connections/${connection.id}` || investments.some(account => location.pathname === `/accounts/investments/${account.id}`)) ? 'bg-sidebar-accent text-sidebar-foreground' : 'text-sidebar-muted')}>
-                  <span className="truncate font-medium" dir="auto">{getConnectionName(connection, t)}</span>
-                  <span className="shrink-0 text-[10px]">{t('investmentAccounts.accountCount', { count: investments.length, defaultValue: '{{count}} accounts' })}</span>
-                </Link>)}
+                {item.path === '/accounts' && <AccountNavigationLinks
+                  accounts={visibleAccounts} investments={visibleInvestments} connections={visibleConnections}
+                  pathname={location.pathname} hash={location.hash} onNavigate={() => setSidebarOpen(false)}
+                />}
                 </div>
               )
             })}
           </nav>
-
-          {/* Account list in sidebar */}
-          {allAccounts.length > 0 && (
-            <div className="px-3 pb-2 mt-2">
-              <button
-                onClick={() => setAccountsExpanded(!accountsExpanded)}
-                className="flex items-center justify-between w-full px-3 py-2 hover:text-sidebar-foreground transition-colors"
-              >
-                <span className="text-[11px] uppercase tracking-[0.12em] font-semibold text-sidebar-muted">
-                  {t('accounts.title')}
-                </span>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`tabular-nums font-medium text-xs ${totalBalance < 0 ? 'text-rose-400' : 'text-sidebar-muted'}`}
-                  >
-                    {mask(formatCurrency(totalBalance, userCurrency, locale))}
-                  </span>
-                  <ChevronRight
-                    size={12}
-                    className={cn(
-                      'text-sidebar-muted transition-transform',
-                      accountsExpanded && 'rotate-90',
-                    )}
-                  />
-                </div>
-              </button>
-              {accountsExpanded && (
-                <div className="mt-1 space-y-0.5">
-                  {[...visibleAccounts].sort((a, b) => Math.abs(Number(b.current_balance)) - Math.abs(Number(a.current_balance))).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
-                    const balance = Number(acc.current_balance) || 0
-                    const typeKey = acc.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())
-
-                    return (
-                      <Link
-                        key={acc.id}
-                        to={`/accounts/${acc.id}`}
-                        onClick={() => setSidebarOpen(false)}
-                        className="flex items-center justify-between px-3 py-1.5 rounded-lg text-xs text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all"
-                      >
-                        <div className="truncate min-w-0">
-                          <span className="block truncate font-medium">{getAccountName(acc)}</span>
-                          <span className="block text-[10px] text-sidebar-muted/60">
-                            {t(`accounts.type${typeKey}`)}
-                          </span>
-                        </div>
-                        <div className="text-right shrink-0 ml-2">
-                          <span className={`block tabular-nums font-medium text-xs ${balance < 0 ? 'text-rose-400' : 'text-sidebar-foreground'}`}>
-                            {mask(formatCurrency(balance, acc.currency, locale))}
-                          </span>
-                        </div>
-                      </Link>
-                    )
-                  })}
-                  {visibleAccounts.length > 3 && (
-                    <button
-                      onClick={() => setAccountsShowAll(!accountsShowAll)}
-                      className="w-full px-3 py-1.5 text-[11px] font-medium text-sidebar-muted/70 hover:text-sidebar-foreground transition-colors text-center"
-                    >
-                      {accountsShowAll
-                        ? t('common.showLess', { defaultValue: 'Show less' })
-                        : t('common.showMore', {
-                            count: visibleAccounts.length - 3,
-                            defaultValue: `+${visibleAccounts.length - 3} more`,
-                          })}
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
           </div>
 
           <UpdateAvailableBanner onOpen={() => setUpdateDialogOpen(true)} />

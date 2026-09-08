@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -14,6 +14,7 @@ from app.providers.base import (
     ProviderNotConfiguredError,
     ProviderUserActionRequired,
     SessionExpiredError,
+    SourceControlError,
 )
 from app.schemas.bank_connection import (
     BankConnectionRead,
@@ -28,9 +29,52 @@ from app.schemas.bank_connection import (
     ReconnectTokenResponse,
 )
 from app.services import connection_service
+from app.services import connection_source_service
+from app.schemas.connection_source import ConnectionSourceStatus, SourceRefreshRequest, SourceRefreshResult
 from app.services.transfer_detection_service import detect_transfer_pairs, unlink_transfer_pair
 
 router = APIRouter(prefix="/api/connections", tags=["connections"])
+
+
+def _source_error(error: SourceControlError) -> HTTPException:
+    return HTTPException(
+        status_code=error.status_code,
+        detail={"code": error.code, "retryAfterSeconds": error.retry_after_seconds},
+        headers={"Retry-After": str(error.retry_after_seconds)} if error.status_code == 429 else None,
+    )
+
+
+@router.get("/{connection_id}/source/status", response_model=ConnectionSourceStatus)
+async def get_source_status(
+    connection_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    if request.query_params:
+        raise HTTPException(status_code=422, detail="Source status does not accept parameters")
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return await connection_source_service.get_source_status(session, connection_id, ctx.workspace.id)
+    except SourceControlError as error:
+        raise _source_error(error) from None
+
+
+@router.post("/{connection_id}/source/refresh", response_model=SourceRefreshResult, status_code=202)
+async def request_source_refresh(
+    connection_id: uuid.UUID,
+    request: Request,
+    data: SourceRefreshRequest | None = None,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    if request.query_params:
+        raise HTTPException(status_code=422, detail="Source refresh does not accept parameters")
+    try:
+        return await connection_source_service.request_source_refresh(session, connection_id, ctx.workspace.id)
+    except SourceControlError as error:
+        raise _source_error(error) from None
 
 
 @router.get("/providers")

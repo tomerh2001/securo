@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatAccountMask, getAccountLabel, getAccountName } from '@/lib/account-utils'
 import { getConnectionName } from '@/lib/connection-utils'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -24,7 +24,8 @@ import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Account, BankConnection } from '@/types'
-import { RefreshCw, TriangleAlert, Unlink, Settings } from 'lucide-react'
+import { ChevronDown, ChevronRight, MoreHorizontal, RefreshCw, Unlink, Settings } from 'lucide-react'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { AccountIcon, ConnectionLogo, getAccountTypeConfig } from '@/components/account-icon'
 import { AccountPageActions } from '@/components/account-page-actions'
 import { AccountRowActions } from '@/components/account-row-actions'
@@ -64,6 +65,7 @@ function daysUntil(dateStr: string | null): number | null {
 export default function AccountsPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const { hash } = useLocation()
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
@@ -243,6 +245,12 @@ export default function AccountsPage() {
   const settingsSupportTransactions = settingsHasBankAccounts
     || (!settingsHasInvestments && settingsConnection?.provider !== 'investment_feed')
 
+  useEffect(() => {
+    if (!isLoading && ['#manual-accounts', '#investment-accounts'].includes(hash)) {
+      document.getElementById(hash.slice(1))?.scrollIntoView({ block: 'start' })
+    }
+  }, [hash, isLoading])
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -269,166 +277,63 @@ export default function AccountsPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Manual Accounts */}
-          {manualAccounts.length > 0 && <div className="bg-card rounded-xl border border-border shadow-sm">
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
-              <h2 className="text-sm font-medium text-muted-foreground">{t('accounts.manualAccounts')}</h2>
-            </div>
-            {manualAccounts.length > 0 ? (
-              <div className="divide-y divide-muted">
-                {manualAccounts.map((acc) => {
-                  const cfg = getAccountTypeConfig(acc.type)
-                  const bal = Number(acc.current_balance)
-                  const isCC = acc.type === 'credit_card'
-                  const dueIn = isCC ? daysUntil(acc.next_due_date) : null
-                  const dueText =
-                    dueIn == null ? null
-                      : dueIn < 0 ? t('accounts.overdue')
-                      : dueIn === 0 ? t('accounts.dueToday')
-                      : t('accounts.dueIn', { count: dueIn })
-                  const dueClass = dueIn != null && dueIn <= 3 ? 'text-amber-600' : 'text-muted-foreground'
-                  const accountMask = formatAccountMask(acc)
-                  return (
-                    <div key={acc.id} className="group flex items-center px-5 py-3 hover:bg-muted/50 transition-colors">
-                      <Link to={`/accounts/${acc.id}`} className="flex items-center gap-3 flex-1 min-w-0">
-                        <AccountIcon account={acc} />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-foreground truncate">{getAccountName(acc)}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {t(cfg.label)}
-                            {accountMask && <> · <span className="tabular-nums">{accountMask}</span></>}
-                            {dueText && <> · <span className={dueClass}>{dueText}</span></>}
-                          </p>
-                        </div>
-                      </Link>
-                      <div className="shrink-0 text-right">
-                        <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
-                          {mask(formatCurrency(bal, acc.currency, locale))}
-                        </p>
-                        {isCC && acc.available_credit != null ? (
-                          <p className="text-[10px] text-muted-foreground tabular-nums">
-                            {t('accounts.availableCredit')}: {mask(formatCurrency(Number(acc.available_credit), acc.currency, locale))}
-                          </p>
-                        ) : acc.balance_primary != null && acc.currency !== userCurrency && (
-                          <p className="text-[10px] text-muted-foreground tabular-nums">
-                            {mask(formatCurrency(acc.balance_primary, userCurrency, locale))}
-                          </p>
-                        )}
-                      </div>
-                      {canWrite && (
-                        <AccountRowActions
-                          accountName={getAccountName(acc)}
-                          onEdit={() => { setEditingAccount(acc); setDialogOpen(true) }}
-                          onClose={() => setClosingAccountId(acc.id)}
-                          onDelete={() => setDeletingId(acc.id)}
-                          deletePending={deleteMutation.isPending}
-                        />
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <div className="px-5 py-8 text-center">
-                <p className="text-sm text-muted-foreground">{t('accounts.noManualAccounts')}</p>
-              </div>
-            )}
-          </div>}
-
-          {standaloneInvestments.length > 0 && <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm" aria-label={t('investmentAccounts.title')}>
-            <h2 className="border-b border-border px-5 py-3.5 text-sm font-medium text-muted-foreground">{t('investmentAccounts.title')}</h2>
-            <div className="divide-y divide-muted">
-              {standaloneInvestments.map(account => <InvestmentAccountRow key={account.id} account={account} />)}
-            </div>
-          </section>}
-
           {/* Bank Connections */}
           {visibleConnections.length > 0 ? (
             <div className="space-y-3">
               {visibleConnections.map((conn) => {
                 const connAccounts = bankAccounts.filter((a) => a.connection_id === conn.id)
                 const connInvestments = visibleInvestments.filter(account => account.connection_id === conn.id)
-                const sourceNeedsAttention = connInvestments.length > 0 && investmentSourceState(connInvestments) !== 'current'
-                const needsReconnect = conn.status !== 'active'
+                const sourceAccounts = (hasModule('assets') ? investmentAccountsList ?? [] : []).filter(account => account.connection_id === conn.id)
+                const sourceState = investmentSourceState(sourceAccounts)
+                const sourceNeedsAttention = sourceAccounts.length > 0 && sourceState !== 'current'
+                const needsReconnect = conn.status === 'expired' || conn.status === 'error'
+                const needsAttention = sourceNeedsAttention || needsReconnect
+                const sourceLabels = {
+                  signInRequired: t('investmentAccounts.statusSignInRequired', { defaultValue: 'Sign-in required' }),
+                  unavailable: t('investmentAccounts.statusUnavailable', { defaultValue: 'Update failed' }),
+                  neverSynced: t('investmentAccounts.statusNeverSynced', { defaultValue: 'Awaiting first update' }),
+                  partial: t('investmentAccounts.statusPartial', { defaultValue: 'Incomplete update' }),
+                  stale: t('investmentAccounts.statusStale', { defaultValue: 'Update overdue' }),
+                  current: '',
+                }
+                const statusLabel = sourceNeedsAttention ? sourceLabels[sourceState] : t(`investmentAccounts.connectionStatuses.${conn.status}`, { defaultValue: conn.status })
                 const syncPending = syncMutation.isPending && syncMutation.variables === conn.id
                 return (
                   <div key={conn.id} className="bg-card rounded-xl border border-border shadow-sm">
-                    {/* Connection header */}
-                    <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
-                      <Link to={`/connections/${conn.id}`} className="flex min-w-0 flex-1 items-center gap-3 rounded-md hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                        {/* One bank's favicon would misrepresent a multi-
-                            institution link — fall back to the generic icon. */}
-                        <ConnectionLogo
-                          logoUrl={(conn.institutions?.length ?? 0) > 1 ? null : conn.logo_url}
-                        />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-semibold break-words" dir="auto">{getConnectionName(conn, t)}</p>
-                            <Badge
-                              variant={conn.status === 'active' ? 'default' : 'secondary'}
-                              className={
-                                conn.status === 'active' && !sourceNeedsAttention
-                                  ? 'text-[10px] px-1.5 py-0 h-4'
-                                  : 'text-[10px] px-1.5 py-0 h-4 border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
-                              }
-                            >
-                              {sourceNeedsAttention ? t('investmentAccounts.needsAttention', { defaultValue: 'Needs attention' }) : t(`investmentAccounts.connectionStatuses.${conn.status}`, { defaultValue: conn.status })}
-                            </Badge>
+                    {/* Provider identity, connection health and secondary actions. */}
+                    <div className="flex items-start justify-between gap-3 px-4 py-4 sm:px-5 border-b border-border">
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                        <ConnectionLogo logoUrl={(conn.institutions?.length ?? 0) > 1 ? null : conn.logo_url} />
+                        <div className="min-w-0 space-y-1.5">
+                          <Link to={`/connections/${conn.id}`} className="inline-flex max-w-full items-center gap-1.5 rounded-sm text-sm font-semibold hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                            <span className="break-words" dir="auto">{getConnectionName(conn, t)}</span><ChevronRight size={14} className="shrink-0 text-muted-foreground" />
+                          </Link>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
+                            {!investmentsFailed && <span>{t('investmentAccounts.accountCount', { defaultValue: '{{count}} accounts', count: connAccounts.length + connInvestments.length })}</span>}
+                            {needsAttention ? <Link to={`/connections/${conn.id}#connection-health`} className="inline-flex flex-wrap items-center gap-2 rounded-sm text-amber-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-300">
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 font-medium border-amber-500/30 bg-amber-500/10 text-inherit">{statusLabel}</Badge>
+                              <span>{canWrite ? t('investmentAccounts.fixConnection', { defaultValue: 'Fix connection' }) : t('investmentAccounts.viewConnectionStatus', { defaultValue: 'View connection status' })}</span>
+                            </Link> : <span>{statusLabel}</span>}
                           </div>
-                          {!investmentsFailed && <p className="text-[11px] text-muted-foreground mt-0.5">{t('investmentAccounts.accountCount', { defaultValue: '{{count}} accounts', count: connAccounts.length + connInvestments.length })}</p>}
-                          {conn.last_sync_at && connInvestments.length === 0 && (
-                            <p className="text-[11px] text-muted-foreground mt-0.5">
-                              {t('accounts.lastSync')}: {new Date(conn.last_sync_at).toLocaleString(dateLocale)}
-                            </p>
-                          )}
+                          {conn.last_sync_at && connInvestments.length === 0 && <p className="text-[11px] text-muted-foreground">
+                            {t('accounts.lastSync')}: {new Date(conn.last_sync_at).toLocaleString(dateLocale)}
+                          </p>}
                         </div>
-                      </Link>
-                      {canWrite && (
-                        <div className="flex items-center gap-1.5">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                            onClick={() => setSettingsConnection(conn)}
-                            title={t('connections.settings')}
-                          >
-                            <Settings size={14} />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className={needsReconnect
-                              ? 'relative h-8 w-8 p-0 text-amber-500 hover:bg-amber-500/10 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300'
-                              : 'h-8 w-8 p-0 text-muted-foreground hover:text-foreground'}
-                            onClick={() => needsReconnect ? handleReconnectClick(conn) : syncMutation.mutate(conn.id)}
-                            disabled={syncPending}
-                            title={needsReconnect
-                              ? conn.status === 'expired'
-                                ? t('accounts.connectionExpired')
-                                : t('accounts.connectionError')
-                              : t('accounts.sync')}
-                            aria-label={needsReconnect ? t('accounts.reconnect') : t('accounts.sync')}
-                          >
+                      </div>
+                      {canWrite && <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground" aria-label={`${t('common.more')}: ${getConnectionName(conn, t)}`}><MoreHorizontal size={17} /></Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onSelect={() => sourceNeedsAttention ? navigate(`/connections/${conn.id}#connection-health`) : needsReconnect ? handleReconnectClick(conn) : syncMutation.mutate(conn.id)} disabled={syncPending || conn.status === 'syncing'}>
                             <RefreshCw size={14} className={syncPending ? 'animate-spin' : ''} />
-                            {needsReconnect && (
-                              <TriangleAlert
-                                size={10}
-                                className="absolute -right-0.5 -top-0.5 rounded-full bg-card text-amber-500"
-                              />
-                            )}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-500"
-                            onClick={() => setDisconnectingConnection(conn)}
-                            disabled={disconnectMutation.isPending}
-                            title={t('accounts.disconnect')}
-                          >
-                            <Unlink size={14} />
-                          </Button>
-                        </div>
-                      )}
+                            {sourceNeedsAttention ? t('investmentAccounts.fixConnection', { defaultValue: 'Fix connection' }) : needsReconnect ? t('accounts.reconnect') : t('accounts.sync')}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setSettingsConnection(conn)}><Settings size={14} />{t('connections.settings')}</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem variant="destructive" onSelect={() => setDisconnectingConnection(conn)} disabled={disconnectMutation.isPending}><Unlink size={14} />{t('accounts.disconnect')}</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>}
                     </div>
                     {/* Accounts list */}
                     {connAccounts.length + connInvestments.length > 0 ? (
@@ -446,7 +351,7 @@ export default function AccountsPage() {
                           const dueClass = dueIn != null && dueIn <= 3 ? 'text-amber-600' : 'text-muted-foreground'
                           const accountMask = formatAccountMask(acc)
                           return (
-                            <div key={acc.id} className="group flex items-center px-5 py-3 hover:bg-muted/50 transition-colors">
+                            <div key={acc.id} className="group flex items-center gap-3 px-4 py-3 sm:px-5 hover:bg-muted/50 transition-colors">
                               <Link to={`/accounts/${acc.id}`} className="flex items-center gap-3 flex-1 min-w-0">
                                 <AccountIcon account={acc} />
                                 <div className="min-w-0 flex-1">
@@ -500,13 +405,87 @@ export default function AccountsPage() {
             </div>
           ) : null}
 
+          {standaloneInvestments.length > 0 && <section id="investment-accounts" className="scroll-mt-20 overflow-hidden rounded-xl border border-border bg-card shadow-sm" aria-label={t('investmentAccounts.title')}>
+            <h2 className="border-b border-border px-5 py-3.5 text-sm font-medium text-muted-foreground">{t('investmentAccounts.title')}</h2>
+            <div className="divide-y divide-muted">
+              {standaloneInvestments.map(account => <InvestmentAccountRow key={account.id} account={account} />)}
+            </div>
+          </section>}
+
+          {/* Manual Accounts */}
+          {manualAccounts.length > 0 && <div id="manual-accounts" className="scroll-mt-20 bg-card rounded-xl border border-border shadow-sm">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
+              <h2 className="text-sm font-medium text-muted-foreground">{t('accounts.manualAccounts')}</h2>
+            </div>
+            {manualAccounts.length > 0 ? (
+              <div className="divide-y divide-muted">
+                {manualAccounts.map((acc) => {
+                  const cfg = getAccountTypeConfig(acc.type)
+                  const bal = Number(acc.current_balance)
+                  const isCC = acc.type === 'credit_card'
+                  const dueIn = isCC ? daysUntil(acc.next_due_date) : null
+                  const dueText =
+                    dueIn == null ? null
+                      : dueIn < 0 ? t('accounts.overdue')
+                      : dueIn === 0 ? t('accounts.dueToday')
+                      : t('accounts.dueIn', { count: dueIn })
+                  const dueClass = dueIn != null && dueIn <= 3 ? 'text-amber-600' : 'text-muted-foreground'
+                  const accountMask = formatAccountMask(acc)
+                  return (
+                    <div key={acc.id} className="group flex items-center gap-3 px-4 py-3 sm:px-5 hover:bg-muted/50 transition-colors">
+                      <Link to={`/accounts/${acc.id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                        <AccountIcon account={acc} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-foreground truncate">{getAccountName(acc)}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {t(cfg.label)}
+                            {accountMask && <> · <span className="tabular-nums">{accountMask}</span></>}
+                            {dueText && <> · <span className={dueClass}>{dueText}</span></>}
+                          </p>
+                        </div>
+                      </Link>
+                      <div className="shrink-0 text-right">
+                        <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
+                          {mask(formatCurrency(bal, acc.currency, locale))}
+                        </p>
+                        {isCC && acc.available_credit != null ? (
+                          <p className="text-[10px] text-muted-foreground tabular-nums">
+                            {t('accounts.availableCredit')}: {mask(formatCurrency(Number(acc.available_credit), acc.currency, locale))}
+                          </p>
+                        ) : acc.balance_primary != null && acc.currency !== userCurrency && (
+                          <p className="text-[10px] text-muted-foreground tabular-nums">
+                            {mask(formatCurrency(acc.balance_primary, userCurrency, locale))}
+                          </p>
+                        )}
+                      </div>
+                      {canWrite && (
+                        <AccountRowActions
+                          accountName={getAccountName(acc)}
+                          onEdit={() => { setEditingAccount(acc); setDialogOpen(true) }}
+                          onClose={() => setClosingAccountId(acc.id)}
+                          onDelete={() => setDeletingId(acc.id)}
+                          deletePending={deleteMutation.isPending}
+                        />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="px-5 py-8 text-center">
+                <p className="text-sm text-muted-foreground">{t('accounts.noManualAccounts')}</p>
+              </div>
+            )}
+          </div>}
+
           {/* Closed Accounts */}
           {closedAccounts.length > 0 && (
-            <div className="bg-card rounded-xl border border-border shadow-sm opacity-60">
-              <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
-                <h2 className="text-sm font-medium text-muted-foreground">{t('accounts.closedAccounts')}</h2>
-              </div>
-              <div className="divide-y divide-muted">
+            <details className="group bg-card rounded-xl border border-border">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-sm text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+                <span>{t('accounts.closedAccounts')} <span className="ml-1 tabular-nums">({closedAccounts.length})</span></span>
+                <ChevronDown size={16} className="shrink-0 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="divide-y divide-muted border-t border-border">
                 {closedAccounts.map((acc) => {
                   return (
                     <div key={acc.id} className="flex items-center px-5 py-3">
@@ -532,7 +511,7 @@ export default function AccountsPage() {
                   )
                 })}
               </div>
-            </div>
+            </details>
           )}
         </div>
       )}

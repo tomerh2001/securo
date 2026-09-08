@@ -124,7 +124,8 @@ describe('investment accounts in Accounts', () => {
     api.connections.list.mockResolvedValue([connectionFixture()])
     const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
     await findInvestmentAccountLink('pension-account')
-    await user.click(screen.getByRole('button', { name: t('connections.settings') }))
+    await user.click(screen.getByRole('button', { name: `${t('common.more')}: Clal` }))
+    await user.click(screen.getByRole('menuitem', { name: t('connections.settings') }))
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(screen.queryByText(t('connections.payeeSource'))).not.toBeInTheDocument()
     expect(screen.queryByLabelText(t('connections.importPending'))).not.toBeInTheDocument()
@@ -143,7 +144,8 @@ describe('investment accounts in Accounts', () => {
     const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
     await findInvestmentAccountLink('pension-account')
     expect(screen.queryByRole('link', { name: /Everyday bank/ })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: t('connections.settings') }))
+    await user.click(screen.getByRole('button', { name: `${t('common.more')}: Clal` }))
+    await user.click(screen.getByRole('menuitem', { name: t('connections.settings') }))
     expect(await screen.findByText(t('connections.payeeSource'))).toBeInTheDocument()
     expect(screen.getByLabelText(t('connections.importPending'))).toBeInTheDocument()
   })
@@ -187,4 +189,33 @@ describe('investment accounts in Accounts', () => {
     expect(queryInvestmentAccountLink('pension-account')).not.toBeInTheDocument()
     expect(screen.getByText(t('investmentAccounts.noAccountsInView'))).toBeInTheDocument()
   })
+
+  it('turns a source sign-in warning into a named recovery destination even when the feed is active', async () => {
+    const account = investmentAccountFixture()
+    account.details.source.status = 'auth_required'
+    api.investmentAccounts.list.mockResolvedValue([account])
+    api.accounts.list.mockResolvedValue([])
+    api.connections.list.mockResolvedValue([connectionFixture({ status: 'active' })])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    const recovery = await screen.findByRole('link', { name: /Sign-in required.*Fix connection/ })
+    expect(recovery).toHaveAttribute('href', '/connections/clal-connection#connection-health')
+    expect(screen.queryByText('Needs attention')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: `${t('common.more')}: Clal` }))
+    expect(screen.getByRole('menuitem', { name: 'Fix connection' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: t('accounts.sync') })).not.toBeInTheDocument()
+  })
+
+  it('keeps closed accounts out of the initial view and reveals them on request', async () => {
+    const closed = bankAccountFixture({ id: 'closed', name: 'Old savings', is_closed: true })
+    api.accounts.list.mockImplementation((includeClosed?: boolean) => Promise.resolve(includeClosed ? [closed] : [bankAccountFixture()]))
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    await findInvestmentAccountLink('pension-account')
+    const section = screen.getByText(t('accounts.closedAccounts'), { exact: false }).closest('details')!
+    expect(section).not.toHaveAttribute('open')
+    expect(within(section).getByText(/Old savings/)).not.toBeVisible()
+    await user.click(section.querySelector('summary')!)
+    expect(section).toHaveAttribute('open')
+    expect(within(section).getByText(/Old savings/)).toBeVisible()
+  })
+
 })
