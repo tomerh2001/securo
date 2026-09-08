@@ -45,6 +45,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
 
+@router.get("/activities")
+async def list_investment_activities(
+    asset_id: uuid.UUID | None = None,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    from app.services.investment_feed_service import get_activities
+    return await get_activities(session, ctx.workspace.id, asset_id)
+
+
 # ----------------------------------------------------------------------------
 # Market price lookup (Yahoo Finance via yfinance)
 # ----------------------------------------------------------------------------

@@ -794,6 +794,51 @@ export interface Asset {
   total_invested: number | null
   realized_gain: number | null
   transaction_count: number
+  investment_details?: InvestmentDetails | null
+}
+
+export interface InvestmentDetails {
+  product_kind: 'pension' | 'keren_hishtalmut' | 'provident_fund' | 'investment'
+  liquidity: { status: 'restricted' | 'available' | 'partially_available' | 'unknown'; availableFrom: string | null; availableAmount: string | null }
+  coverage: { valuations: 'complete' | 'partial' | 'unavailable'; activities: 'complete' | 'partial' | 'unavailable'; tracks: 'complete' | 'partial' | 'unavailable' }
+  forecast: { monthlyPension: string; currency: string; asOf: string | null } | null
+  tracks: InvestmentTrack[]
+  source: {
+    provider: string
+    status: 'ok' | 'partial' | 'auth_required' | 'error' | 'never_synced'
+    lastAttemptAt: string | null
+    lastSuccessAt: string | null
+    staleAfterHours: number
+    errorCode?: string | null
+    inventoryComplete: boolean
+  }
+  valuation_date: string | null
+  observed_at: string | null
+}
+
+export interface InvestmentTrack {
+  id: string
+  productId: string
+  name: string
+  amount: string | null
+  allocationPercent: string | null
+  currency: string
+  asOf: string | null
+  observedAt: string
+}
+
+export interface AssetActivity {
+  id: string
+  asset_id: string
+  asset_name: string
+  kind: string
+  date: string
+  date_kind: string
+  amount: number
+  currency: string
+  description: string | null
+  source_id: string
+  observed_at: string | null
 }
 
 /** One order read from a broker CSV, before it reaches a holding. */
@@ -897,6 +942,8 @@ export interface AssetValue {
   amount: number
   date: string
   source: string
+  source_as_of_verified?: boolean
+  observed_at?: string | null
 }
 
 export interface Goal {

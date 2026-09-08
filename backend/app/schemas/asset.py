@@ -114,6 +114,8 @@ class AssetRead(BaseModel):
     total_invested: Optional[float] = None
     realized_gain: Optional[float] = None
     transaction_count: int = 0
+    # Sanitized versioned investment-feed fields, never the provider's raw response.
+    investment_details: Optional[dict] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -203,5 +205,7 @@ class AssetValueRead(BaseModel):
     amount: float
     date: _date
     source: str
+    source_as_of_verified: bool = True
+    observed_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)

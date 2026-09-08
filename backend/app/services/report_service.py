@@ -98,13 +98,18 @@ async def _asset_value_at(
     asset_result = await session.execute(asset_stmt)
     total = 0.0
     for asset in asset_result.scalars().all():
-        val_result = await session.execute(
-            select(AssetValue.amount)
-            .where(AssetValue.asset_id == asset.id, AssetValue.date <= cutoff)
-            .order_by(desc(AssetValue.date), desc(AssetValue.id))
-            .limit(1)
-        )
-        val = val_result.scalar_one_or_none()
+        if asset.source == "investment_feed":
+            from app.services.asset_service import _get_value_as_of
+            source_value = await _get_value_as_of(session, asset.id, cutoff)
+            val = source_value.amount if source_value is not None else None
+        else:
+            val_result = await session.execute(
+                select(AssetValue.amount)
+                .where(AssetValue.asset_id == asset.id, AssetValue.date <= cutoff)
+                .order_by(desc(AssetValue.date), desc(AssetValue.id))
+                .limit(1)
+            )
+            val = val_result.scalar_one_or_none()
         if val is not None:
             amount = float(val)
         elif asset.purchase_price is not None and (
@@ -177,13 +182,18 @@ async def _net_worth_at(
     asset_result = await session.execute(asset_stmt)
     assets_total = 0.0
     for asset in asset_result.scalars().all():
-        val_result = await session.execute(
-            select(AssetValue.amount)
-            .where(AssetValue.asset_id == asset.id, AssetValue.date <= cutoff)
-            .order_by(desc(AssetValue.date), desc(AssetValue.id))
-            .limit(1)
-        )
-        val = val_result.scalar_one_or_none()
+        if asset.source == "investment_feed":
+            from app.services.asset_service import _get_value_as_of
+            source_value = await _get_value_as_of(session, asset.id, cutoff)
+            val = source_value.amount if source_value is not None else None
+        else:
+            val_result = await session.execute(
+                select(AssetValue.amount)
+                .where(AssetValue.asset_id == asset.id, AssetValue.date <= cutoff)
+                .order_by(desc(AssetValue.date), desc(AssetValue.id))
+                .limit(1)
+            )
+            val = val_result.scalar_one_or_none()
         if val is not None:
             amount = float(val)
         elif asset.purchase_price is not None and (

@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { assets, assetGroups, currencies as currenciesApi } from '@/lib/api'
@@ -58,6 +59,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { getAssetProfit } from '@/lib/asset-profit'
+import { InvestmentActivities, InvestmentBadges, InvestmentProductDetails } from '@/components/investment-details'
 import { formatCurrency } from '@/lib/format'
 
 // Renders a logo image when one is available, falling back to the asset's
@@ -192,6 +194,7 @@ export default function AssetsPage() {
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
   const { canWrite } = useWorkspace()
+  const isMobile = useIsMobile()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
 
@@ -201,7 +204,7 @@ export default function AssetsPage() {
     staleTime: Infinity,
   })
 
-  const [activeTab, setActiveTab] = useState<'holdings' | 'transactions'>('holdings')
+  const [activeTab, setActiveTab] = useState<'holdings' | 'transactions' | 'activities'>('holdings')
   // Holding id for the lightweight "add transaction to this holding" dialog,
   // opened from the holdings table ("+ add buys") and the inline ledger.
   const [addTxAssetId, setAddTxAssetId] = useState<string | null>(null)
@@ -754,6 +757,7 @@ export default function AssetsPage() {
                 )}
               </div>
               <span className="text-[11px] text-muted-foreground truncate block">{asset.ticker && !asset.ticker.startsWith('TD:') ? asset.name : (asset.ticker?.startsWith('TD:') ? 'Tesouro Direto' : t(`assets.type${asset.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())}`))}</span>
+              {asset.investment_details && <InvestmentBadges details={asset.investment_details} />}
             </div>
           </div>
           {/* Quant. */}
@@ -842,7 +846,10 @@ export default function AssetsPage() {
               />
             </>
           ) : (
-            <AssetDetail assetId={asset.id} currency={asset.currency} locale={locale} dateLocale={dateLocale} purchasePrice={asset.purchase_price} purchaseDate={asset.purchase_date} valuationMethod={asset.valuation_method} canWrite={canWrite} />
+            <>
+              {asset.investment_details && <InvestmentProductDetails asset={asset} />}
+              <AssetDetail assetId={asset.id} currency={asset.currency} locale={locale} dateLocale={dateLocale} purchasePrice={asset.purchase_price} purchaseDate={asset.purchase_date} valuationMethod={asset.valuation_method} canWrite={canWrite && !isProviderOwned} isInvestment={!!asset.investment_details} />
+            </>
           )
         )}
       </div>
@@ -871,6 +878,29 @@ export default function AssetsPage() {
   // Wrap a set of holding rows in a horizontally-scrollable table shell so the
   // columns stay aligned (and usable on narrow screens).
   function renderHoldingsTable(rows: Asset[]) {
+    if (isMobile && rows.every(asset => asset.investment_details)) {
+      return (
+        <div className="rounded-xl border border-border bg-card divide-y divide-border overflow-hidden">
+          {rows.map(asset => (
+            <div key={asset.id}>
+              <button className="w-full p-3 text-left space-y-2" aria-expanded={expandedId === asset.id} onClick={() => setExpandedId(expandedId === asset.id ? null : asset.id)}>
+                <span className="flex items-start justify-between gap-3 text-sm">
+                  <span className="font-semibold">{asset.name}</span>
+                  <span className="font-semibold whitespace-nowrap tabular-nums">{asset.current_value != null ? mask(formatCurrency(asset.current_value, asset.currency, locale)) : '—'}</span>
+                </span>
+                <InvestmentBadges details={asset.investment_details!} />
+              </button>
+              {expandedId === asset.id && (
+                <>
+                  <InvestmentProductDetails asset={asset} />
+                  <AssetDetail assetId={asset.id} currency={asset.currency} locale={locale} dateLocale={dateLocale} purchasePrice={asset.purchase_price} purchaseDate={asset.purchase_date} valuationMethod={asset.valuation_method} canWrite={false} isInvestment />
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )
+    }
     return (
       <div className="rounded-xl border border-border bg-card shadow-sm overflow-x-auto">
         <div className="min-w-[720px]">
@@ -1025,7 +1055,7 @@ export default function AssetsPage() {
         title={t('assets.title')}
         action={
           canWrite ? (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button onClick={() => navigate('/import?tab=investments')} variant="outline" className="gap-1.5">
                 <Upload size={16} />
                 {t('assetImport.action')}
@@ -1057,9 +1087,19 @@ export default function AssetsPage() {
         >
           {t('assets.tabTransactions')}
         </button>
+        {rawAssetsList?.some(asset => asset.investment_details) && (
+          <button
+            onClick={() => setActiveTab('activities')}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'activities' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            {t('investments.activities')}
+          </button>
+        )}
       </div>
 
-      {activeTab === 'transactions' ? (
+      {activeTab === 'activities' ? (
+        <InvestmentActivities allowedAssetIds={(assetsList ?? []).map(asset => asset.id)} />
+      ) : activeTab === 'transactions' ? (
         <AssetTransactionsTab
           holdings={assetsList ?? []}
           wallets={sortedWallets}
@@ -1965,7 +2005,7 @@ function renderAssetTradeDot(props: {
   )
 }
 
-function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purchasePrice, purchaseDate, valuationMethod, canWrite, chartOnly = false }: {
+function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purchasePrice, purchaseDate, valuationMethod, canWrite, chartOnly = false, isInvestment = false }: {
   assetId: string; currency: string; locale: string; dateLocale: string
   purchasePrice: number | null; purchaseDate: string | null
   valuationMethod: string
@@ -1973,6 +2013,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
   // When true, render only the value-evolution chart (used above the ledger
   // for market-priced holdings) — no manual value form / value-history list.
   chartOnly?: boolean
+  isInvestment?: boolean
 }) {
   const { t } = useTranslation()
   const { mask } = usePrivacyMode()
@@ -2196,6 +2237,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
       {/* Value History */}
       {!chartOnly && <div>
         <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('assets.valueHistory')}</p>
+        {isInvestment && <p className="text-xs text-muted-foreground mb-2">{t('investments.balanceChangeHint')}</p>}
         {valuesLoading ? (
           <Skeleton className="h-20 w-full rounded-lg" />
         ) : valuesWithPurchase.length > 0 ? (
@@ -2205,10 +2247,10 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
               // Calculate change from previous entry (next in array since sorted desc)
               const prev = valuesWithPurchase[idx + 1]
               const change = prev ? v.amount - prev.amount : null
-              const changePct = prev && prev.amount !== 0 ? (change! / prev.amount) * 100 : null
+              const changePct = !isInvestment && prev && prev.amount !== 0 ? (change! / prev.amount) * 100 : null
 
               return (
-                <div key={v.id} className={`flex items-center justify-between py-2 px-3 transition-colors ${isPurchase ? 'bg-primary/5' : 'hover:bg-muted/30'}`}>
+                <div key={v.id} className={`flex items-center justify-between py-2 px-3 transition-colors ${isInvestment ? 'flex-wrap gap-2' : ''} ${isPurchase ? 'bg-primary/5' : 'hover:bg-muted/30'}`}>
                   <div className="flex items-center gap-3 min-w-0">
                     <span className="text-sm tabular-nums font-semibold text-foreground">
                       {mask(formatCurrency(v.amount, currency, loc))}
@@ -2220,12 +2262,13 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className={`flex items-center gap-2 shrink-0 ${isInvestment ? 'w-full sm:w-auto justify-between sm:justify-start' : ''}`}>
                     <Badge variant={isPurchase ? 'default' : 'outline'} className={`text-[10px] px-1.5 py-0 ${isPurchase ? 'bg-primary/15 text-primary border-primary/30' : ''}`}>
-                      {t(`assets.source${v.source.charAt(0).toUpperCase() + v.source.slice(1)}`)}
+                      {isInvestment ? t('investments.providerValue') : t(`assets.source${v.source.charAt(0).toUpperCase() + v.source.slice(1)}`)}
                     </Badge>
                     <span className="text-[11px] text-muted-foreground tabular-nums">
                       {new Date(v.date + 'T00:00:00').toLocaleDateString(dateLoc)}
+                      {v.source_as_of_verified === false && <span className="block text-[10px]">{t('investments.observationDate')}</span>}
                     </span>
                     {valuationMethod === 'manual' && v.source === 'manual' && canWrite && (
                       <button

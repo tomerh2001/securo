@@ -383,6 +383,10 @@ class BankProvider(ABC):
         """
         return []
 
+    async def get_investment_feed(self, credentials: dict):
+        """Return source-dated savings data, or None for ordinary bank providers."""
+        return None
+
     async def get_bills(self, credentials: dict, account_external_id: str) -> list[BillData]:
         """Fetch credit-card bills (faturas) for an account.
 

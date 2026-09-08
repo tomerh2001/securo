@@ -50,6 +50,7 @@ import type {
   WorkspaceMember,
   WorkspaceRole,
   Asset,
+  AssetActivity,
   AssetGroup,
   AssetImportPreview,
   AssetImportResult,
@@ -1110,6 +1111,10 @@ export const dashboard = {
 
 // Assets
 export const assets = {
+  activities: async (assetId?: string): Promise<AssetActivity[]> => {
+    const { data } = await api.get('/assets/activities', { params: { asset_id: assetId } })
+    return data
+  },
   list: async (includeArchived = false): Promise<Asset[]> => {
     const { data } = await api.get('/assets', { params: { include_archived: includeArchived } })
     return data

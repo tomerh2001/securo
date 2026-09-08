@@ -801,7 +801,7 @@ export default function DashboardPage() {
                   <p>{t('dashboard.netWorthTooltip')}</p>
                   <div className="mt-1.5 pt-1.5 border-t border-background/20 space-y-0.5">
                     <div className="flex justify-between gap-3">
-                      <span>{t('dashboard.availableBalance')}</span>
+                      <span>{t('investments.accountBalances')}</span>
                       <span>{mask(formatCurrency(nonCardAccountsBalance, primaryCurrency, locale))}</span>
                     </div>
                     {assetsValue > 0 && (
@@ -818,7 +818,7 @@ export default function DashboardPage() {
                     )}
                     {hasProjectedBalance && (
                       <div className="flex justify-between gap-3">
-                        <span>{t('dashboard.projectedBalance')}</span>
+                        <span>{t('investments.projectedNetWorth')}</span>
                         <span>{mask(formatCurrency(projectedBalance, primaryCurrency, locale))}</span>
                       </div>
                     )}

@@ -18,6 +18,14 @@ _PROVIDERS: dict[str, type[BankProvider]] = {}
 # All known providers the system supports (extensible for future connectors).
 KNOWN_PROVIDERS = [
     {
+        "name": "investment_feed",
+        "display_name": "Clal",
+        "description": "Pension and savings through your investment collector",
+        "flow_type": "token",
+        "requires_institution_select": False,
+        "supports_asset_sync": True,
+    },
+    {
         "name": "pluggy",
         "display_name": "Pluggy",
         "description": "Open finance provider for Brazilian banks",
@@ -78,6 +86,9 @@ def _auto_register_providers() -> None:
     """Auto-register providers when credentials are configured."""
     from app.core.config import get_settings
     settings = get_settings()
+    if settings.investment_feed_enabled and settings.investment_feed_url:
+        from app.providers.investment_feed import InvestmentFeedProvider
+        register_provider("investment_feed", InvestmentFeedProvider)
 
     if settings.pluggy_client_id and settings.pluggy_client_secret:
         from app.providers.pluggy import PluggyProvider

@@ -9,9 +9,12 @@ type ProfitAsset = Pick<
   | 'sell_price'
   | 'total_invested'
   | 'value_count'
->
+> & Pick<Asset, 'investment_details'>
 
 export function getAssetProfit(asset: ProfitAsset) {
+  // Provider balances do not establish the contributions and cost basis needed
+  // for investment returns. Keep balance changes in the value history instead.
+  if (asset.investment_details) return null
   const amount = asset.sell_date
     ? asset.realized_gain ?? (
       asset.sell_price != null && asset.purchase_price != null

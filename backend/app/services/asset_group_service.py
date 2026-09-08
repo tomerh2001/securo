@@ -18,6 +18,11 @@ from app.services.fx_rate_service import convert
 
 async def _latest_value_amount(session: AsyncSession, asset_id: uuid.UUID) -> Optional[Decimal]:
     """Return the most recent AssetValue.amount for an asset, or None."""
+    asset = await session.get(Asset, asset_id)
+    if asset is not None and asset.source == "investment_feed":
+        from app.services.asset_service import _get_latest_value
+        value = await _get_latest_value(session, asset_id)
+        return value.amount if value is not None else None
     row = await session.execute(
         select(AssetValue.amount)
         .where(AssetValue.asset_id == asset_id)

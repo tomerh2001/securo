@@ -15,6 +15,7 @@ from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
+from app.models.asset_activity import AssetActivity
 from app.models.fx_rate import FxRate
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.payee import Payee, PayeeMapping, PayeeTaxId
@@ -53,6 +54,7 @@ __all__ = [
     "AssetGroup",
     "AssetTransaction",
     "AssetValue",
+    "AssetActivity",
     "FxRate",
     "TransactionAttachment",
     "Payee",
