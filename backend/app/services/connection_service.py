@@ -260,6 +260,15 @@ async def _sync_holdings(
     investment data, and we don't want a brokerage hiccup to break the
     bank-account sync that just succeeded.
     """
+    if connection.provider == "investment_feed":
+        provider = get_provider(connection.provider)
+        feed = await provider.get_investment_feed(credentials)
+        from app.services.investment_feed_service import sync_feed
+        if feed is None:
+            raise ValueError("Investment collector did not return a feed")
+        await sync_feed(session, connection, feed)
+        return
+
     # Tolerate provider-side failures (e.g. Pluggy returning 500 for a
     # specific connector, a bank that doesn't expose /investments).
     # Storage errors below are intentionally not caught — they indicate
@@ -1009,6 +1018,15 @@ async def handle_oauth_callback(
     provider = get_provider(provider_name)
     connection_data = await provider.handle_oauth_callback(code)
 
+    if provider_name == "investment_feed" and not existing_reconnect:
+        duplicate = await session.scalar(select(BankConnection.id).where(
+            BankConnection.workspace_id == workspace_id,
+            BankConnection.provider == provider_name,
+            BankConnection.external_id == connection_data.external_id,
+        ))
+        if duplicate:
+            raise ValueError("This investment collector is already connected; use reconnect")
+
     if existing_reconnect:
         existing_reconnect.external_id = connection_data.external_id
         existing_reconnect.institution_name = (
@@ -1189,7 +1207,8 @@ async def handle_oauth_callback(
         await sync_opening_balance_for_connected_account(session, account)
 
     # Detect transfer pairs among newly synced transactions
-    await detect_transfer_pairs(session, workspace_id, candidate_ids=new_tx_ids)
+    if new_tx_ids:
+        await detect_transfer_pairs(session, workspace_id, candidate_ids=new_tx_ids)
 
     # Investment holdings live on /investments — separate endpoint from
     # /accounts. Pulled after account setup when enabled so holdings are

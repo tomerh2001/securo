@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { getAssetProfit } from '@/lib/asset-profit'
+import type { InvestmentDetails } from '@/types'
 
 const baseAsset = {
   gain_loss: null,
@@ -13,6 +14,16 @@ const baseAsset = {
 }
 
 describe('getAssetProfit', () => {
+  it('does not present a provider balance change as investment profit', () => {
+    expect(getAssetProfit({
+      ...baseAsset,
+      gain_loss: 500,
+      purchase_price: 1000,
+      value_count: 2,
+      investment_details: { product_kind: 'pension' } as InvestmentDetails,
+    })).toBeNull()
+  })
+
   it('uses the purchase price for a manually valued asset', () => {
     expect(getAssetProfit({
       ...baseAsset,

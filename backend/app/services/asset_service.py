@@ -173,11 +173,20 @@ def _asset_to_read(
         total_invested=total_invested,
         realized_gain=float(asset.realized_gain) if asset.realized_gain is not None else None,
         transaction_count=transaction_count,
+        investment_details=(asset.external_metadata or {}).get("investment_details"),
     )
 
 
 async def _get_latest_value(session: AsyncSession, asset_id: uuid.UUID) -> Optional[AssetValue]:
     """Get the most recent AssetValue for an asset."""
+    asset = await session.get(Asset, asset_id)
+    if asset is not None and asset.source == "investment_feed":
+        current_id = (asset.external_metadata or {}).get("current_valuation_id")
+        if not current_id:
+            return None
+        return await session.scalar(select(AssetValue).where(
+            AssetValue.asset_id == asset_id, AssetValue.external_id == current_id,
+        ))
     result = await session.execute(
         select(AssetValue)
         .where(AssetValue.asset_id == asset_id)
@@ -191,10 +200,13 @@ async def _get_value_as_of(
     session: AsyncSession, asset_id: uuid.UUID, as_of_date: date
 ) -> Optional[AssetValue]:
     """Get the most recent AssetValue for an asset on or before as_of_date."""
+    asset = await session.get(Asset, asset_id)
+    if asset is not None and asset.source == "investment_feed" and as_of_date >= date.today():
+        return await _get_latest_value(session, asset_id)
     result = await session.execute(
         select(AssetValue)
         .where(AssetValue.asset_id == asset_id, AssetValue.date <= as_of_date)
-        .order_by(desc(AssetValue.date), desc(AssetValue.id))
+        .order_by(desc(AssetValue.date), AssetValue.source_as_of_verified.asc(), AssetValue.observed_at.desc().nullslast(), desc(AssetValue.id))
         .limit(1)
     )
     return result.scalar_one_or_none()
@@ -290,7 +302,7 @@ async def _load_asset_native_values(
     q = (
         select(AssetValue.asset_id, AssetValue.date, AssetValue.amount, AssetValue.price)
         .where(AssetValue.asset_id.in_(asset_ids))
-        .order_by(AssetValue.asset_id, AssetValue.date, AssetValue.id)
+        .order_by(AssetValue.asset_id, AssetValue.date, AssetValue.source_as_of_verified.desc(), AssetValue.observed_at.asc().nullsfirst(), AssetValue.id)
     )
     if up_to_date is not None:
         q = q.where(AssetValue.date <= up_to_date)
@@ -636,6 +648,8 @@ async def update_asset(
         return None
 
     update_data = data.model_dump(exclude_unset=True)
+    if asset.source == "investment_feed" and set(update_data) - {"group_id", "position", "is_archived"}:
+        raise HTTPException(status_code=400, detail="Collector investment fields are read-only")
     # Prevent changing valuation_method on existing assets
     update_data.pop("valuation_method", None)
     for key, value in update_data.items():
@@ -743,10 +757,13 @@ async def add_asset_value(
     """Add a new value entry for an asset."""
     # Verify ownership
     owner_check = await session.execute(
-        select(Asset.id).where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
+        select(Asset).where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
     )
-    if not owner_check.scalar_one_or_none():
+    asset = owner_check.scalar_one_or_none()
+    if asset is None:
         return None
+    if asset.source == "investment_feed":
+        raise HTTPException(status_code=400, detail="Collector investment values are read-only")
 
     value = AssetValue(
         asset_id=asset_id,
@@ -772,6 +789,9 @@ async def delete_asset_value(
     value = result.scalar_one_or_none()
     if not value:
         return False
+    asset = await session.get(Asset, value.asset_id)
+    if asset is not None and asset.source == "investment_feed":
+        raise HTTPException(status_code=400, detail="Collector investment values are read-only")
     await session.delete(value)
     await session.commit()
     return True
@@ -857,6 +877,7 @@ async def get_portfolio_trend(
     asset_currency: dict[str, str] = {}
     sell_date_by_aid: dict[str, date] = {}
     all_dates: set[date] = set()
+    current_investment_values: dict[str, Optional[float]] = {}
 
     for asset in active_assets:
         aid = str(asset.id)
@@ -869,6 +890,10 @@ async def get_portfolio_trend(
         asset_currency[aid] = asset.currency
 
         vals = values_map[aid]
+        if asset.source == "investment_feed":
+            current = await _get_latest_value(session, asset.id)
+            current_investment_values[aid] = float(current.amount) if current is not None else None
+            all_dates.add(date.today())
 
         # If the asset was sold and a sell_price is recorded, treat it as the
         # asset's terminal value on sell_date so the chart reflects the
@@ -922,6 +947,16 @@ async def get_portfolio_trend(
             if aid in sell_date_by_aid and d > sell_date_by_aid[aid]:
                 native = 0.0
                 last_known[aid] = 0.0
+
+            # The current portfolio point follows the source's explicit
+            # current pointer, not whichever historical row has the last date.
+            # Unknown values form a gap; they are not fabricated zero balances.
+            if d >= date.today() and aid in current_investment_values and aid not in sell_date_by_aid:
+                current_native = current_investment_values[aid]
+                if current_native is None:
+                    row[aid] = None
+                    continue
+                native = current_native
 
             # Convert native amount to primary currency at this display date
             currency = asset_currency[aid]
@@ -990,7 +1025,10 @@ async def get_asset_values_at(
         values_map = await _load_asset_native_values(session, assets, up_to_date=as_of_date)
 
     for asset in assets:
-        if as_of_date is not None:
+        if asset.source == "investment_feed":
+            latest = await _get_value_as_of(session, asset.id, as_of_date) if as_of_date is not None else await _get_latest_value(session, asset.id)
+            amount = _compute_current_value(asset, latest)
+        elif as_of_date is not None:
             amount: Optional[float] = _fill_forward_at(asset, values_map[str(asset.id)], as_of_date)
         else:
             latest = await _get_latest_value(session, asset.id)

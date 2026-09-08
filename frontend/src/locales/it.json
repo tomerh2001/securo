@@ -940,7 +940,16 @@
       },
       "reconnectTitle": "Riconnetti con un nuovo token",
       "reconnectDescription": "Incolla un nuovo token di configurazione per aggiornare questa connessione senza sostituirla. Account, transazioni, categorie e regole esistenti vengono conservati.",
-      "reconnect": "Riconnetti"
+      "reconnect": "Riconnetti",
+      "investment_feed": {
+        "title": "Connect Clal investments",
+        "description": "Import your pension and keren hishtalmut balances, history and available product details from your Clal collector.",
+        "reconnectTitle": "Reconnect Clal investments",
+        "reconnectDescription": "Paste a new connection token from your Clal collector to resume updates.",
+        "tokenLabel": "Clal connection token",
+        "tokenPlaceholder": "Paste the connection token",
+        "tokenHelp": "Use the token issued by your home-server collector. Your ID, phone number and SMS code belong in the collector login, not here."
+      }
     },
     "providers": {
       "pluggy": {
@@ -951,6 +960,9 @@
       },
       "simplefin": {
         "description": "Banche statunitensi e internazionali tramite SimpleFIN Bridge"
+      },
+      "investment_feed": {
+        "description": "Clal pension and keren hishtalmut through your collector."
       }
     },
     "reconnected": "Banca riconnessa correttamente"
@@ -2239,5 +2251,93 @@
         "openai": "OpenAI Responses API"
       }
     }
+  },
+  "investments": {
+    "productDetails": "Investment product details",
+    "productKinds": {
+      "pension": "Pension",
+      "keren_hishtalmut": "Keren hishtalmut",
+      "provident_fund": "Provident fund",
+      "investment": "Investment"
+    },
+    "liquidity": {
+      "restricted": "Restricted savings",
+      "available": "Available to withdraw",
+      "partially_available": "Partially available",
+      "unknown": "Withdrawal availability unknown"
+    },
+    "refreshNeeded": "Refresh needed",
+    "valuationDate": "Value as of",
+    "valuationDateUnknown": "Valuation date not supplied",
+    "observedOn": "Observed on {{date}}",
+    "lastCollection": "Last successful collection",
+    "noSuccessfulCollection": "No successful collection yet",
+    "sourceStatuses": {
+      "ok": "Collection complete",
+      "partial": "Collection incomplete",
+      "auth_required": "Sign in to Clal again to refresh",
+      "error": "Collection failed; last verified values retained",
+      "never_synced": "Waiting for the first collection",
+      "unknown": "Collection status unknown"
+    },
+    "staleBalance": "This balance has not been refreshed recently.",
+    "incompleteInventory": "Clal has not confirmed that every product was collected.",
+    "withdrawalAvailability": "Withdrawal availability",
+    "availableFrom": "Available from {{date}}",
+    "availableAmount": "Reported available amount: {{amount}}",
+    "netWorthNotCash": "Included in net worth. Withdrawal availability does not add this value to your bank cash balance.",
+    "monthlyPensionForecast": "Projected monthly pension",
+    "forecastAsOf": "As of {{date}}",
+    "forecastInformational": "Provider estimate only. Excluded from current net worth, income and cash projections.",
+    "performanceUnavailable": "Investment performance is unavailable without verified contributions and costs.",
+    "historyCoverage": "Value history: {{valuations}}. Activity history: {{activities}}.",
+    "coverage": {
+      "complete": "complete",
+      "partial": "partial",
+      "unavailable": "not supplied",
+      "unknown": "unknown"
+    },
+    "investmentTracks": "Investment tracks",
+    "tracksUnavailable": "No investment track details were supplied.",
+    "activities": "Pension and savings activity",
+    "activitiesHint": "Provider-reported contributions, withdrawals and costs. These records do not create duplicate bank transactions.",
+    "activitiesError": "Investment activity could not be loaded.",
+    "retry": "Try again",
+    "noActivities": "No activity records were supplied for these products. This does not establish that there was no activity.",
+    "activityDate": "Date or contribution month",
+    "product": "Product",
+    "activityKind": "Activity",
+    "description": "Description",
+    "amount": "Amount",
+    "monthOnly": "Contribution month; exact day not supplied",
+    "dateKinds": {
+      "effective": "Effective date",
+      "booking": "Booking date",
+      "contribution_month": "Contribution month"
+    },
+    "activityKinds": {
+      "employee_contribution": "Employee contribution",
+      "employer_contribution": "Employer contribution",
+      "severance_contribution": "Severance contribution",
+      "withdrawal": "Withdrawal",
+      "transfer_in": "Transfer in",
+      "transfer_out": "Transfer out",
+      "management_fee": "Management fee",
+      "insurance_cost": "Insurance cost",
+      "investment_return": "Provider-reported investment return",
+      "actuarial_adjustment": "Actuarial adjustment",
+      "other": "Other activity"
+    },
+    "balanceChangeHint": "Changes between balances include contributions, withdrawals, costs and returns. They are not a measure of investment performance.",
+    "providerValue": "Provider balance",
+    "observationDate": "Observation date; valuation date unknown",
+    "accountBalances": "Account balances",
+    "projectedNetWorth": "Projected net worth",
+    "reportSummaries": "Provider period summaries",
+    "reportSummariesHint": "These reports show contributions, fees, insurance costs and returns reported by Clal. Overlapping periods are shown separately and are not added to transactions or net worth.",
+    "reportPeriod": "{{from}} – {{to}}",
+    "reportFrom": "From {{date}}",
+    "reportThrough": "Through {{date}}",
+    "reportPeriodUnknown": "Reporting period not supplied"
   }
 }

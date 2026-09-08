@@ -257,6 +257,8 @@ async def add_transaction(
     asset = await _load_asset(session, asset_id, workspace_id)
     if asset is None:
         return None
+    if asset.source == "investment_feed":
+        raise HTTPException(status_code=400, detail="Savings activity cannot be edited as share trades")
     _validate(data.kind, data.quantity, data.price)
     new_tx = AssetTransaction(
         asset_id=asset.id,

@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     # the demo token; flip to https://bridge.simplefin.org for production.
     simplefin_enabled: bool = False
     simplefin_api_url: str = "https://beta-bridge.simplefin.org"
+    investment_feed_enabled: bool = False
+    investment_feed_url: str = ""
 
     # Frontend
     frontend_url: str = "http://localhost:5173"

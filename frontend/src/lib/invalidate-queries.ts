@@ -23,4 +23,10 @@ export function invalidateFinancialQueries(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ['budgets'] })
   queryClient.invalidateQueries({ queryKey: ['reports'] })
   queryClient.invalidateQueries({ queryKey: ['drill-down'] })
+  queryClient.invalidateQueries({ queryKey: ['assets'] })
+  queryClient.invalidateQueries({ queryKey: ['asset-groups'] })
+  queryClient.invalidateQueries({ queryKey: ['asset-values'] })
+  queryClient.invalidateQueries({ queryKey: ['asset-trend'] })
+  queryClient.invalidateQueries({ queryKey: ['asset-activities'] })
+  queryClient.invalidateQueries({ queryKey: ['portfolio-trend'] })
 }

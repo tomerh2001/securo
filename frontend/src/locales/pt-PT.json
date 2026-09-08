@@ -940,7 +940,16 @@
       },
       "reconnectTitle": "Reconectar com um novo token",
       "reconnectDescription": "Cola um novo token de configuração para atualizar esta ligação no lugar. Contas, transações, categorias e regras existentes são preservadas.",
-      "reconnect": "Reconectar"
+      "reconnect": "Reconectar",
+      "investment_feed": {
+        "title": "Conectar investimentos da Clal",
+        "description": "Importe saldos, histórico e detalhes disponíveis da previdência e do keren hishtalmut a partir do coletor da Clal.",
+        "reconnectTitle": "Reconectar investimentos da Clal",
+        "reconnectDescription": "Cole um novo token de conexão do coletor da Clal para retomar as atualizações.",
+        "tokenLabel": "Token de conexão da Clal",
+        "tokenPlaceholder": "Cole o token de conexão",
+        "tokenHelp": "Use o token emitido pelo coletor do seu servidor. Documento, telefone e código SMS devem ser usados no acesso ao coletor, não aqui."
+      }
     },
     "providers": {
       "pluggy": {
@@ -951,6 +960,9 @@
       },
       "simplefin": {
         "description": "Bancos dos EUA e internacionais via SimpleFIN Bridge"
+      },
+      "investment_feed": {
+        "description": "Previdência e keren hishtalmut da Clal pelo seu coletor."
       }
     },
     "reconnected": "Banco reconectado com sucesso"
@@ -2239,5 +2251,93 @@
         "openai": "OpenAI Responses API"
       }
     }
+  },
+  "investments": {
+    "productDetails": "Detalhes do investimento",
+    "productKinds": {
+      "pension": "Previdência",
+      "keren_hishtalmut": "Keren hishtalmut",
+      "provident_fund": "Fundo de previdência",
+      "investment": "Investimento"
+    },
+    "liquidity": {
+      "restricted": "Poupança restrita",
+      "available": "Disponível para resgate",
+      "partially_available": "Parcialmente disponível",
+      "unknown": "Disponibilidade para resgate desconhecida"
+    },
+    "refreshNeeded": "Atualização necessária",
+    "valuationDate": "Valor em",
+    "valuationDateUnknown": "Data de avaliação não informada",
+    "observedOn": "Observado em {{date}}",
+    "lastCollection": "Última coleta bem-sucedida",
+    "noSuccessfulCollection": "Nenhuma coleta bem-sucedida ainda",
+    "sourceStatuses": {
+      "ok": "Coleta concluída",
+      "partial": "Coleta incompleta",
+      "auth_required": "Entre novamente na Clal para atualizar",
+      "error": "Falha na coleta; últimos valores verificados mantidos",
+      "never_synced": "Aguardando a primeira coleta",
+      "unknown": "Estado da coleta desconhecido"
+    },
+    "staleBalance": "Este saldo não foi atualizado recentemente.",
+    "incompleteInventory": "A Clal não confirmou a coleta de todos os produtos.",
+    "withdrawalAvailability": "Disponibilidade para resgate",
+    "availableFrom": "Disponível a partir de {{date}}",
+    "availableAmount": "Valor disponível informado: {{amount}}",
+    "netWorthNotCash": "Incluído no patrimônio líquido. A disponibilidade para resgate não adiciona este valor ao saldo bancário disponível.",
+    "monthlyPensionForecast": "Benefício mensal projetado",
+    "forecastAsOf": "Em {{date}}",
+    "forecastInformational": "Estimativa do provedor. Excluída do patrimônio atual, das receitas e das projeções de caixa.",
+    "performanceUnavailable": "A rentabilidade não está disponível sem contribuições e custos verificados.",
+    "historyCoverage": "Histórico de valores: {{valuations}}. Histórico de atividades: {{activities}}.",
+    "coverage": {
+      "complete": "completo",
+      "partial": "parcial",
+      "unavailable": "não informado",
+      "unknown": "desconhecido"
+    },
+    "investmentTracks": "Modalidades de investimento",
+    "tracksUnavailable": "Nenhum detalhe das modalidades de investimento foi informado.",
+    "activities": "Atividade de previdência e poupança",
+    "activitiesHint": "Contribuições, resgates e custos informados pelo provedor. Estes registros não duplicam transações bancárias.",
+    "activitiesError": "Não foi possível carregar a atividade dos investimentos.",
+    "retry": "Tentar novamente",
+    "noActivities": "Nenhuma atividade foi informada para estes produtos. Isso não significa que não houve atividade.",
+    "activityDate": "Data ou mês de contribuição",
+    "product": "Produto",
+    "activityKind": "Atividade",
+    "description": "Descrição",
+    "amount": "Valor",
+    "monthOnly": "Mês de contribuição; dia exato não informado",
+    "dateKinds": {
+      "effective": "Data efetiva",
+      "booking": "Data de lançamento",
+      "contribution_month": "Mês de contribuição"
+    },
+    "activityKinds": {
+      "employee_contribution": "Contribuição do empregado",
+      "employer_contribution": "Contribuição do empregador",
+      "severance_contribution": "Contribuição rescisória",
+      "withdrawal": "Resgate",
+      "transfer_in": "Transferência recebida",
+      "transfer_out": "Transferência enviada",
+      "management_fee": "Taxa de administração",
+      "insurance_cost": "Custo de seguro",
+      "investment_return": "Rendimento informado pelo provedor",
+      "actuarial_adjustment": "Ajuste atuarial",
+      "other": "Outra atividade"
+    },
+    "balanceChangeHint": "As variações de saldo incluem contribuições, resgates, custos e rendimentos. Elas não medem a rentabilidade do investimento.",
+    "providerValue": "Saldo do provedor",
+    "observationDate": "Data de observação; data de avaliação desconhecida",
+    "accountBalances": "Saldos das contas",
+    "projectedNetWorth": "Patrimônio líquido projetado",
+    "reportSummaries": "Provider period summaries",
+    "reportSummariesHint": "These reports show contributions, fees, insurance costs and returns reported by Clal. Overlapping periods are shown separately and are not added to transactions or net worth.",
+    "reportPeriod": "{{from}} – {{to}}",
+    "reportFrom": "From {{date}}",
+    "reportThrough": "Through {{date}}",
+    "reportPeriodUnknown": "Reporting period not supplied"
   }
 }
