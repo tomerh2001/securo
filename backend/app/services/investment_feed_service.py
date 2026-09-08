@@ -24,6 +24,24 @@ def _utc(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
+def ensure_provider_identity(connection: BankConnection, assets: list[Asset], provider: str) -> None:
+    """Validate a collector source before reconnect or sync changes saved data."""
+    recorded_sources = [
+        (connection.settings or {}).get("investment_source"),
+        {"provider": (connection.credentials or {}).get("source_provider")},
+    ]
+    recorded_sources.extend(
+        ((asset.external_metadata or {}).get("investment_details") or {}).get("source")
+        for asset in assets if asset.connection_id == connection.id
+    )
+    for recorded_source in recorded_sources:
+        if not isinstance(recorded_source, dict):
+            continue
+        recorded_provider = recorded_source.get("provider")
+        if isinstance(recorded_provider, str) and recorded_provider and recorded_provider != provider:
+            raise ValueError("Investment connection provider changed; use a separate connection")
+
+
 async def sync_feed(session: AsyncSession, connection: BankConnection, feed: InvestmentFeed) -> None:
     """Upsert source identities atomically; incomplete responses never erase data.
 
@@ -42,17 +60,7 @@ async def sync_feed(session: AsyncSession, connection: BankConnection, feed: Inv
     # A collector endpoint can be reconfigured, but an existing connection must
     # never relabel its saved products as another provider. Older connections
     # may only have the source identity on their owned assets.
-    recorded_sources = [(connection.settings or {}).get("investment_source")]
-    recorded_sources.extend(
-        ((asset.external_metadata or {}).get("investment_details") or {}).get("source")
-        for asset in existing if asset.connection_id == connection.id
-    )
-    for recorded_source in recorded_sources:
-        if not isinstance(recorded_source, dict):
-            continue
-        provider = recorded_source.get("provider")
-        if isinstance(provider, str) and provider and provider != feed.source.provider:
-            raise ValueError("Investment connection provider changed; use a separate connection")
+    ensure_provider_identity(connection, existing, feed.source.provider)
     previous_generated_at = (connection.settings or {}).get("investment_feed_generated_at")
     if previous_generated_at and _utc(datetime.fromisoformat(previous_generated_at)) > _utc(feed.generatedAt):
         return

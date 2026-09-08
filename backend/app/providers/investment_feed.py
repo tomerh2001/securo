@@ -24,6 +24,9 @@ class InvestmentFeedProvider(BankProvider):
             raise ValueError("Invalid investment access token")
         credentials = {"token": code}
         feed = await self.get_investment_feed(credentials)
+        # Carry only the verified source identity into reconnect validation;
+        # the endpoint hash alone cannot detect a source switch at that URL.
+        credentials["source_provider"] = feed.source.provider
         # Stable across a token rotation. Product IDs remain provider-assigned.
         endpoint = get_settings().investment_feed_url
         external_id = "investment-feed:" + hashlib.sha256(endpoint.encode()).hexdigest()[:24]

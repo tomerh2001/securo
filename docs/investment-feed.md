@@ -85,6 +85,8 @@ It changes only masked identifier metadata; it cannot create accounts or modify
 source status, values, activities, groups or bank transactions. Run it with an
 already verified cached feed and check financial fingerprints before and after.
 
+An existing investment connection cannot switch source providers: reconnect and sync reject a mismatched verified source before changing saved connection or financial data; use a separate connection for another provider.
+
 The new UI copy is registered in every locale bundle with English fallback
 wording, matching the existing investment-field fallback convention.
 
