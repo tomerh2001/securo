@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     # provider collection; clients cannot configure an endpoint or this capability.
     investment_feed_control_token: SecretStr = SecretStr("")
     investment_feed_control_token_file: str = ""
+    best_invest_feed_url: str = ""
+    best_invest_feed_control_token: SecretStr = SecretStr("")
+    best_invest_feed_control_token_file: str = ""
 
     # Frontend
     frontend_url: str = "http://localhost:5173"
@@ -72,7 +75,7 @@ class Settings(BaseSettings):
 
     # FX Rates
     openexchangerates_app_id: str = ""
-    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,RUB,GTQ,PHP,UAH,NZD,VND,SGD,AZN,TRY,PKR"  # comma-separated list
+    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,RUB,GTQ,PHP,UAH,NZD,VND,SGD,AZN,TRY,PKR,ILS"  # comma-separated list
     fx_sync_mode: str = "on_demand"  # "on_demand" or "scheduled"
 
     # Storage

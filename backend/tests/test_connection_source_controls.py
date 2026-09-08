@@ -184,8 +184,14 @@ async def test_source_identity_changes_block_collection(
         asset.external_metadata = {}
     await session.commit()
     response = await client.post(f"/api/connections/{source_connection.id}/source/refresh", headers=auth_headers, json={})
-    assert response.status_code == 409, response.text
-    assert response.json()["detail"]["code"].startswith("source_identity_")
+    # Unknown provider strings in collector JSON are now rejected by the
+    # shared source enum before identity comparison. Both paths must deny writes.
+    invalid_source_json = location in ("feed", "control")
+    assert response.status_code == (503 if invalid_source_json else 409), response.text
+    if invalid_source_json:
+        assert response.json()["detail"]["code"] == "source_controls_unavailable"
+    else:
+        assert response.json()["detail"]["code"].startswith("source_identity_")
     assert not any(method == "POST" for method, _, _ in collector["calls"])
 
 
@@ -238,3 +244,54 @@ async def test_unknown_enum_and_oversize_response_fail_closed(collector):
     assert len(json.dumps(collector["status"])) > 65536
     with pytest.raises(SourceControlError, match="source_controls_unavailable"):
         await InvestmentFeedProvider().get_source_status({})
+
+
+async def test_other_collector_never_uses_primary_control_capability(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "investment_feed_url", "http://clal.test/investments/v1")
+    monkeypatch.setattr(settings, "investment_feed_control_token", SecretStr("clal-control-" + "x" * 32))
+    monkeypatch.setattr(settings, "investment_feed_control_token_file", "")
+    monkeypatch.setattr(settings, "best_invest_feed_url", "http://best.test/investments/v1")
+    monkeypatch.setattr(settings, "best_invest_feed_control_token", SecretStr(""))
+    monkeypatch.setattr(settings, "best_invest_feed_control_token_file", "")
+    calls = []
+    original_client = httpx.AsyncClient
+
+    def respond(request):
+        calls.append(request)
+        result = control_payload()
+        result["source"]["provider"] = "hachshara_best_invest"
+        return httpx.Response(200, json=result)
+
+    monkeypatch.setattr(provider_module, "httpx", SimpleNamespace(
+        AsyncClient=lambda **kwargs: original_client(**kwargs, transport=httpx.MockTransport(respond)),
+        HTTPError=httpx.HTTPError,
+    ))
+    provider = InvestmentFeedProvider()
+    credentials = {"source_provider": "hachshara_best_invest", "token": "best-read-token"}
+    with pytest.raises(SourceControlError) as error:
+        await provider.get_source_status(credentials)
+    assert error.value.code == "source_controls_not_configured"
+    assert not calls
+
+    monkeypatch.setattr(settings, "best_invest_feed_control_token", SecretStr("best-control-" + "y" * 32))
+    status = await provider.get_source_status(credentials)
+    assert status.source.provider == "hachshara_best_invest"
+    assert len(calls) == 1
+    assert calls[0].url.host == "best.test"
+    assert calls[0].headers["authorization"] == "Bearer best-control-" + "y" * 32
+    assert provider.configured_external_id("hachshara_best_invest") != provider.configured_external_id("clal")
+    with pytest.raises(SourceControlError) as error:
+        await provider.request_source_refresh(credentials, "clal")
+    assert error.value.code == "source_identity_mismatch"
+    assert len(calls) == 1
+
+
+async def test_supported_but_different_controller_source_cannot_refresh(
+    client, auth_headers, source_connection, collector,
+):
+    collector["status"]["source"]["provider"] = "hachshara_best_invest"
+    response = await client.post(f"/api/connections/{source_connection.id}/source/refresh", headers=auth_headers, json={})
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "source_identity_mismatch"
+    assert not any(method == "POST" for method, _, _ in collector["calls"])

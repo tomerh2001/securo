@@ -1,9 +1,9 @@
 # Investment collector integration
 
 The optional investment collector connection consumes a cached, scoped feed. Clal
-is the first collector. The same contract supports additional providers. It
+and Hachshara Best Invest are supported as separate source connections. It
 creates one investment asset per actual product identity, with separate groups
-for pension, keren hishtalmut, and provident funds. It creates no bank accounts,
+for pension, keren hishtalmut, provident funds, and investments. It creates no bank accounts,
 cash transactions, or share trades. Track balances and projected monthly
 pensions are descriptive information and do not increase net worth twice.
 
@@ -11,7 +11,10 @@ Enable the provider with `INVESTMENT_FEED_ENABLED=true` and set
 `INVESTMENT_FEED_URL` to the administrator-controlled `/investments/v1` endpoint.
 Enable these settings in both the API and background worker. Connect using the
 collector's investment access token through the normal token connection flow.
-The URL is never taken from the pasted token; redirects are disabled.
+For Best Invest, configure `BEST_INVEST_FEED_URL` and use a
+`best-invest.<token>` connection token. See [Best Invest setup](best-invest.md).
+The selected URL is administrator-controlled; redirects are disabled.
+The feed accepts source providers `clal` and `hachshara_best_invest`.
 
 The feed contract is defined in `backend/app/schemas/investment_feed.py`.
 Money is transported as exact decimal strings. Product, valuation, and activity
@@ -39,9 +42,9 @@ is incomplete. Verified counterpart bank payments can retain their existing
 investment-transfer classification independently of this ledger.
 
 Incomplete inventory never closes or deletes assets. Failed collection and
-required Clal verification retain the last known values and update the visible
-source status. The bridge access token remains valid when Clal requires a new
-SMS code; replacing that token does not solve a Clal login challenge. Scheduled
+required provider verification retain the last known values and update the visible
+source status. The bridge access token remains valid when a provider requires a new
+verification code; replacing that token does not solve a provider login challenge. Scheduled
 Securo pulls only read the cache and never request an SMS.
 
 ## Source health and explicit collection
@@ -134,3 +137,9 @@ wording, matching the existing investment-field fallback convention.
 The fork publishes backend/frontend `latest` images only from a successful
 `main` CI run. Deploy those published artifacts after migration backup and
 normal service review; do not bind-mount application changes into production.
+
+Each configured investment source keeps its own controller capability. Best Invest
+uses `BEST_INVEST_FEED_CONTROL_TOKEN` or `BEST_INVEST_FEED_CONTROL_TOKEN_FILE` with
+its existing `BEST_INVEST_FEED_URL`; it never falls back to Clal control credentials.
+Omit these until that collector implements the control protocol. Connection
+identity checks compare the endpoint and provider selected by that connection.

@@ -96,6 +96,11 @@ SIMPLEFIN_API_URL=https://beta-bridge.simplefin.org   # sandbox; use bridge.simp
 
 Then in Securo: **Accounts → Connect Bank → SimpleFIN**, and paste the token. The [developer page](https://beta-bridge.simplefin.org/info/developers) gives out free demo tokens if you want to try it without a real bank.
 
+
+### Clal and Hachshara Best Invest
+
+Connect pension and investment policies through your self-hosted investment collector. Clal and Best Invest use separate connections and access tokens, with provider balances, valuation dates, tracks and freshness shown in Accounts. See [Best Invest setup](docs/best-invest.md) for the internal feed URLs and connection steps.
+
 ## OIDC Login (Optional)
 
 Securo can delegate login to any standard OIDC provider, including Authentik and Pocket ID. Create a confidential/web application in your provider and register this redirect URI:

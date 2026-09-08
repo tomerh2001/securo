@@ -1,4 +1,4 @@
-"""Pull a scoped investment feed from an administrator-configured collector."""
+"""Pull provider-specific investment feeds from administrator-configured collectors."""
 import hashlib
 import re
 from pathlib import Path
@@ -12,6 +12,29 @@ from app.providers.base import BankProvider, ConnectionData, SessionExpiredError
 from app.schemas.connection_source import CollectorControlStatus, SourceRefreshResult
 from app.schemas.investment_feed import InvestmentFeed
 
+SOURCE_NAMES = {"clal": "Clal", "hachshara_best_invest": "Hachshara Best Invest"}
+BEST_INVEST_TOKEN_PREFIX = "best-invest."
+
+
+def investment_source_provider(credentials: dict) -> str:
+    # Existing Clal connections may predate the persisted source identifier.
+    source = credentials.get("source_provider", "clal")
+    if not isinstance(source, str) or source not in SOURCE_NAMES:
+        raise ValueError("Unsupported investment source")
+    return source
+
+
+def _endpoint(source_provider: str) -> str:
+    settings = get_settings()
+    endpoint = (
+        settings.best_invest_feed_url
+        if source_provider == "hachshara_best_invest"
+        else settings.investment_feed_url
+    )
+    if not isinstance(endpoint, str) or not endpoint.startswith(("http://", "https://")):
+        raise ValueError("Investment collector endpoint is not configured")
+    return endpoint
+
 
 class InvestmentFeedProvider(BankProvider):
     name = "investment_feed"
@@ -22,27 +45,30 @@ class InvestmentFeedProvider(BankProvider):
         return True
 
     @staticmethod
-    def configured_external_id() -> str:
-        endpoint = get_settings().investment_feed_url
+    def configured_external_id(source_provider: str = "clal") -> str:
+        endpoint = _endpoint(source_provider)
         return "investment-feed:" + hashlib.sha256(endpoint.encode()).hexdigest()[:24]
 
     async def get_oauth_url(self, redirect_uri, state, flow_params=None):
         raise NotImplementedError("Paste the collector's investment access token")
 
     async def handle_oauth_callback(self, code):
-        # The endpoint is administrator-controlled. A pasted token cannot turn
-        # this server into an arbitrary URL fetcher or expose a token in a URL.
+        # The prefix selects a fixed administrator endpoint, never a pasted URL.
+        if not isinstance(code, str):
+            raise ValueError("Invalid investment access token")
+        source_provider = "clal"
+        if code.startswith(BEST_INVEST_TOKEN_PREFIX):
+            source_provider = "hachshara_best_invest"
+            code = code[len(BEST_INVEST_TOKEN_PREFIX):]
         if not re.fullmatch(r"[A-Za-z0-9_\-.~]{20,512}", code):
             raise ValueError("Invalid investment access token")
-        credentials = {"token": code}
+        credentials = {"token": code, "source_provider": source_provider}
         feed = await self.get_investment_feed(credentials)
-        # Carry only the verified source identity into reconnect validation;
-        # the endpoint hash alone cannot detect a source switch at that URL.
-        credentials["source_provider"] = feed.source.provider
-        # Stable across a token rotation. Product IDs remain provider-assigned.
-        external_id = self.configured_external_id()
-        institution_name = feed.source.provider.replace("_", " ").replace("-", " ").title()
-        return ConnectionData(external_id, institution_name, credentials, [])
+        if feed.source.provider != source_provider:
+            raise ValueError("Investment collector source does not match selected provider")
+        # Endpoint identity remains stable across token rotation and isolated by source.
+        external_id = self.configured_external_id(source_provider)
+        return ConnectionData(external_id, SOURCE_NAMES[source_provider], credentials, [])
 
     async def get_accounts(self, credentials):
         return []
@@ -53,15 +79,21 @@ class InvestmentFeedProvider(BankProvider):
     async def refresh_credentials(self, credentials):
         return credentials
 
-    async def _control_request(self, method: str, action: str, expected_provider: str | None = None):
+    async def _control_request(
+        self, method: str, action: str, source_provider: str, expected_provider: str | None = None,
+    ):
         settings = get_settings()
         # Read capability and control capability are deliberately independent.
         # URL, filesystem path and token are administrator configuration only.
         try:
-            token = (Path(settings.investment_feed_control_token_file).read_text().strip()
-                     if settings.investment_feed_control_token_file
-                     else settings.investment_feed_control_token.get_secret_value())
-            parsed = urlsplit(settings.investment_feed_url)
+            # Each source has an independent control capability; never fall back
+            # from a second collector to the first collector's credential.
+            prefix = "best_invest_feed" if source_provider == "hachshara_best_invest" else "investment_feed"
+            token_file = getattr(settings, f"{prefix}_control_token_file")
+            token = (Path(token_file).read_text().strip() if token_file
+                     else getattr(settings, f"{prefix}_control_token").get_secret_value())
+            source_endpoint = _endpoint(source_provider)
+            parsed = urlsplit(source_endpoint)
             if (parsed.scheme not in ("http", "https") or not parsed.hostname
                     or parsed.username or parsed.password or parsed.query or parsed.fragment
                     or not re.fullmatch(r"[A-Za-z0-9_\-.~]{32,512}", token)):
@@ -69,7 +101,7 @@ class InvestmentFeedProvider(BankProvider):
         except (OSError, ValueError):
             raise SourceControlError("source_controls_not_configured") from None
 
-        endpoint = settings.investment_feed_url.rstrip("/") + "/control/" + action
+        endpoint = source_endpoint.rstrip("/") + "/control/" + action
         headers = {"Authorization": f"Bearer {token}"}
         if expected_provider is not None:
             headers["X-Investment-Provider"] = expected_provider
@@ -102,15 +134,17 @@ class InvestmentFeedProvider(BankProvider):
             raise SourceControlError("source_controls_unavailable") from None
 
     async def get_source_status(self, credentials: dict) -> CollectorControlStatus:
-        return await self._control_request("GET", "status")
+        return await self._control_request("GET", "status", investment_source_provider(credentials))
 
     async def request_source_refresh(self, credentials: dict, expected_provider: str) -> SourceRefreshResult:
-        return await self._control_request("POST", "refresh", expected_provider)
+        source_provider = investment_source_provider(credentials)
+        if source_provider != expected_provider:
+            raise SourceControlError("source_identity_mismatch", status_code=409)
+        return await self._control_request("POST", "refresh", source_provider, expected_provider)
 
     async def get_investment_feed(self, credentials) -> InvestmentFeed:
-        endpoint = get_settings().investment_feed_url
-        if not endpoint or not endpoint.startswith(("http://", "https://")):
-            raise ValueError("Investment collector endpoint is not configured")
+        source_provider = investment_source_provider(credentials)
+        endpoint = _endpoint(source_provider)
         token = credentials.get("token")
         if not isinstance(token, str) or not token:
             raise SessionExpiredError("Investment access token is missing")
@@ -122,10 +156,12 @@ class InvestmentFeedProvider(BankProvider):
             response.raise_for_status()
             if len(response.content) > 32 * 1024 * 1024:
                 raise ValueError("Investment feed is too large")
-            return InvestmentFeed.model_validate(response.json())
+            feed = InvestmentFeed.model_validate(response.json())
+            if feed.source.provider != source_provider:
+                raise ValueError("Investment collector source does not match selected provider")
+            return feed
         except SessionExpiredError:
             raise
         except (httpx.HTTPError, ValidationError, ValueError):
-            # Never propagate response bodies, request headers, or tokens to
-            # connection error handlers, which are allowed to log exceptions.
+            # Never expose provider responses, credentials or request headers.
             raise ValueError("Could not read a valid investment feed") from None

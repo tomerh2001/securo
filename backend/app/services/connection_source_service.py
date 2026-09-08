@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.asset import Asset
 from app.providers import get_provider
 from app.providers.base import SessionExpiredError, SourceControlError
-from app.providers.investment_feed import InvestmentFeedProvider
+from app.providers.investment_feed import InvestmentFeedProvider, investment_source_provider
 from app.schemas.connection_source import ConnectionSourceStatus, SourceRefreshResult
 from app.services.connection_service import get_connection
 from app.services.investment_feed_service import ensure_provider_identity
@@ -31,7 +31,11 @@ async def _verified_source(session: AsyncSession, connection_id: uuid.UUID, work
     if isinstance(provider, InvestmentFeedProvider):
         # A server URL change cannot grant a pre-existing connection control of
         # another collector, even if both happen to use the same provider name.
-        if connection.external_id != provider.configured_external_id():
+        try:
+            external_id = provider.configured_external_id(investment_source_provider(credentials))
+        except ValueError:
+            raise SourceControlError("source_identity_mismatch", status_code=409) from None
+        if connection.external_id != external_id:
             raise SourceControlError("source_identity_mismatch", status_code=409)
         try:
             # Prove that this connection's own read token still authorizes the

@@ -1018,17 +1018,20 @@ async def handle_oauth_callback(
     provider = get_provider(provider_name)
     connection_data = await provider.handle_oauth_callback(code)
 
-    if provider_name == "investment_feed" and not existing_reconnect:
-        duplicate = await session.scalar(select(BankConnection.id).where(
+    if provider_name == "investment_feed":
+        duplicate_query = select(BankConnection.id).where(
             BankConnection.workspace_id == workspace_id,
             BankConnection.provider == provider_name,
             BankConnection.external_id == connection_data.external_id,
-        ))
-        if duplicate:
+        )
+        if existing_reconnect:
+            duplicate_query = duplicate_query.where(BankConnection.id != existing_reconnect.id)
+        if await session.scalar(duplicate_query):
             raise ValueError("This investment collector is already connected; use reconnect")
 
     if existing_reconnect:
         if provider_name == "investment_feed":
+            from app.providers.investment_feed import investment_source_provider
             from app.services.investment_feed_service import ensure_provider_identity
 
             source_provider = connection_data.credentials.get("source_provider")
@@ -1039,6 +1042,10 @@ async def handle_oauth_callback(
             await session.execute(select(BankConnection).where(
                 BankConnection.id == existing_reconnect.id,
             ).with_for_update().execution_options(populate_existing=True))
+            # Token-only connections predate source selection and belong to Clal,
+            # even when they have not collected any products or source metadata.
+            if investment_source_provider(existing_reconnect.credentials or {}) != source_provider:
+                raise ValueError("Investment connection provider changed; use a separate connection")
             assets = list((await session.scalars(select(Asset).where(
                 Asset.workspace_id == workspace_id,
                 Asset.connection_id == existing_reconnect.id,
