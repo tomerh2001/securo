@@ -7,6 +7,8 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Identifier = Annotated[str, Field(min_length=1, max_length=255)]
+ProviderId = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]{0,49}$")]
+ProductKind = Literal["pension", "keren_hishtalmut", "provident_fund", "investment"]
 Currency = Annotated[str, Field(pattern=r"^[A-Z]{3}$")]
 Coverage = Literal["complete", "partial", "unavailable"]
 ActivityKind = Literal[
@@ -86,9 +88,9 @@ class InvestmentReportSummary(FeedModel):
 
 class InvestmentProduct(FeedModel):
     id: Identifier
-    provider: Literal["clal"]
+    provider: ProviderId
     providerProductId: Identifier
-    kind: Literal["pension", "keren_hishtalmut", "provident_fund", "investment"]
+    kind: ProductKind
     name: Annotated[str, Field(min_length=1, max_length=255)]
     currency: Currency
     liquidity: Liquidity
@@ -176,7 +178,7 @@ class InvestmentTrack(FeedModel):
 
 
 class InvestmentSource(FeedModel):
-    provider: Literal["clal"]
+    provider: ProviderId
     status: Literal["ok", "partial", "auth_required", "error", "never_synced"]
     lastAttemptAt: datetime | None
     lastSuccessAt: datetime | None
@@ -217,6 +219,10 @@ class InvestmentFeed(FeedModel):
             dated_values.add(key)
         values_by_id = {row.id: row for row in self.valuations}
         for product in self.products:
+            if product.provider != self.source.provider:
+                raise ValueError("Product provider must match the feed source")
+            if not product.id.startswith(f"{product.provider}:") or product.id == f"{product.provider}:":
+                raise ValueError("Product identity must be namespaced by its provider")
             if product.currentValuationId is not None:
                 current = values_by_id.get(product.currentValuationId)
                 if current is None or current.productId != product.id:

@@ -1,10 +1,9 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
-import { useIsMobile } from '@/hooks/use-mobile'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
-import { assets, assetGroups, currencies as currenciesApi } from '@/lib/api'
+import { assets, assetGroups, investmentAccounts, currencies as currenciesApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -52,14 +51,13 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from 'recharts'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/page-header'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { getAssetProfit } from '@/lib/asset-profit'
-import { InvestmentActivities, InvestmentBadges, InvestmentProductDetails } from '@/components/investment-details'
 import { formatCurrency } from '@/lib/format'
 
 // Renders a logo image when one is available, falling back to the asset's
@@ -193,8 +191,8 @@ export default function AssetsPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite } = useWorkspace()
-  const isMobile = useIsMobile()
+  const { canWrite, hasModule } = useWorkspace()
+  const accountsEnabled = hasModule('accounts')
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
 
@@ -204,7 +202,7 @@ export default function AssetsPage() {
     staleTime: Infinity,
   })
 
-  const [activeTab, setActiveTab] = useState<'holdings' | 'transactions' | 'activities'>('holdings')
+  const [activeTab, setActiveTab] = useState<'holdings' | 'transactions'>('holdings')
   // Holding id for the lightweight "add transaction to this holding" dialog,
   // opened from the holdings table ("+ add buys") and the inline ledger.
   const [addTxAssetId, setAddTxAssetId] = useState<string | null>(null)
@@ -260,6 +258,12 @@ export default function AssetsPage() {
   const { data: rawAssetsList, isLoading } = useQuery({
     queryKey: ['assets'],
     queryFn: () => assets.list(false),
+  })
+
+  const { data: investmentAccountList } = useQuery({
+    queryKey: ['investment-accounts'],
+    queryFn: () => investmentAccounts.list(),
+    enabled: rawAssetsList?.some(asset => !!asset.investment_details) ?? false,
   })
 
   // Active Collection filter (issue #105): when a collection is active, scope
@@ -498,8 +502,15 @@ export default function AssetsPage() {
     return Math.round(current * 100) / 100
   }, [formMethod, formPurchasePrice, formGrowthRate, formGrowthType, formGrowthFrequency, formGrowthStartDate, formPurchaseDate])
 
-  const activeAssets = assetsList?.filter(a => !a.sell_date && !a.is_archived) ?? []
-  const soldAssets = assetsList?.filter(a => a.sell_date) ?? []
+  // Managed products have account navigation; tradable and manual holdings
+  // retain the existing editing and buy/sell tools. Both remain in the same
+  // portfolio total, so showing an investment account never adds a balance.
+  const investmentAssets = assetsList?.filter(a => !!a.investment_details && !a.is_archived) ?? []
+  const ordinaryAssets = assetsList?.filter(a => !a.investment_details) ?? []
+  const activeAssets = ordinaryAssets.filter(a => !a.sell_date && !a.is_archived)
+  const soldAssets = ordinaryAssets.filter(a => a.sell_date)
+  const investmentOnly = investmentAssets.length > 0 && ordinaryAssets.length === 0
+  const visibleTab = investmentOnly ? 'holdings' : activeTab
 
   // Debounced ticker search. Runs only when the market-price method is
   // selected and the query is non-trivial — keeps the autocomplete snappy
@@ -757,7 +768,6 @@ export default function AssetsPage() {
                 )}
               </div>
               <span className="text-[11px] text-muted-foreground truncate block">{asset.ticker && !asset.ticker.startsWith('TD:') ? asset.name : (asset.ticker?.startsWith('TD:') ? 'Tesouro Direto' : t(`assets.type${asset.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())}`))}</span>
-              {asset.investment_details && <InvestmentBadges details={asset.investment_details} />}
             </div>
           </div>
           {/* Quant. */}
@@ -847,8 +857,7 @@ export default function AssetsPage() {
             </>
           ) : (
             <>
-              {asset.investment_details && <InvestmentProductDetails asset={asset} />}
-              <AssetDetail assetId={asset.id} currency={asset.currency} locale={locale} dateLocale={dateLocale} purchasePrice={asset.purchase_price} purchaseDate={asset.purchase_date} valuationMethod={asset.valuation_method} canWrite={canWrite && !isProviderOwned} isInvestment={!!asset.investment_details} />
+              <AssetDetail assetId={asset.id} currency={asset.currency} locale={locale} dateLocale={dateLocale} purchasePrice={asset.purchase_price} purchaseDate={asset.purchase_date} valuationMethod={asset.valuation_method} canWrite={canWrite && !isProviderOwned} />
             </>
           )
         )}
@@ -878,29 +887,6 @@ export default function AssetsPage() {
   // Wrap a set of holding rows in a horizontally-scrollable table shell so the
   // columns stay aligned (and usable on narrow screens).
   function renderHoldingsTable(rows: Asset[]) {
-    if (isMobile && rows.every(asset => asset.investment_details)) {
-      return (
-        <div className="rounded-xl border border-border bg-card divide-y divide-border overflow-hidden">
-          {rows.map(asset => (
-            <div key={asset.id}>
-              <button className="w-full p-3 text-left space-y-2" aria-expanded={expandedId === asset.id} onClick={() => setExpandedId(expandedId === asset.id ? null : asset.id)}>
-                <span className="flex items-start justify-between gap-3 text-sm">
-                  <span className="font-semibold">{asset.name}</span>
-                  <span className="font-semibold whitespace-nowrap tabular-nums">{asset.current_value != null ? mask(formatCurrency(asset.current_value, asset.currency, locale)) : '—'}</span>
-                </span>
-                <InvestmentBadges details={asset.investment_details!} />
-              </button>
-              {expandedId === asset.id && (
-                <>
-                  <InvestmentProductDetails asset={asset} />
-                  <AssetDetail assetId={asset.id} currency={asset.currency} locale={locale} dateLocale={dateLocale} purchasePrice={asset.purchase_price} purchaseDate={asset.purchase_date} valuationMethod={asset.valuation_method} canWrite={false} isInvestment />
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-      )
-    }
     return (
       <div className="rounded-xl border border-border bg-card shadow-sm overflow-x-auto">
         <div className="min-w-[720px]">
@@ -929,6 +915,57 @@ export default function AssetsPage() {
   }, [walletsList])
 
   const ungroupedAssets = assetsByGroup.get(null) ?? []
+
+  const holdingWallets = sortedWallets.filter(wallet =>
+    (assetsByGroup.get(wallet.id)?.length ?? 0) > 0
+    || (wallet.source === 'manual' && !investmentAssets.some(asset => asset.group_id === wallet.id)),
+  )
+  const managedGroups = new Map<string, Asset[]>()
+  for (const asset of investmentAssets) {
+    const key = asset.connection_id ?? asset.group_id ?? 'unconnected'
+    managedGroups.set(key, [...(managedGroups.get(key) ?? []), asset])
+  }
+
+  function renderInvestmentAccounts() {
+    if (investmentAssets.length === 0) return null
+    return (
+      <section className="space-y-3" aria-label={t('investmentAccounts.title', { defaultValue: 'Investment accounts' })}>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold">{t('investmentAccounts.title', { defaultValue: 'Investment accounts' })}</h2>
+          {accountsEnabled && <Link to="/accounts" className="text-xs text-muted-foreground hover:text-foreground hover:underline">{t('investmentAccounts.viewAccounts', { defaultValue: 'View accounts' })}</Link>}
+        </div>
+        {[...managedGroups.entries()].map(([groupId, rows]) => {
+          const first = rows[0]
+          const account = investmentAccountList?.find(item => item.id === first.id)
+          const wallet = sortedWallets.find(item => item.id === first.group_id)
+          const institution = account?.institution_name || wallet?.institution_name || wallet?.name || t('investmentAccounts.title', { defaultValue: 'Investment accounts' })
+          return <div key={groupId} className="overflow-hidden rounded-xl border border-border bg-card">
+            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
+              {accountsEnabled && first.connection_id ? <Link to={`/connections/${first.connection_id}`} className="inline-flex min-w-0 items-center gap-2 text-sm font-semibold hover:underline"><span dir="auto" className="truncate">{institution}</span><ChevronRight size={14} className="shrink-0 text-muted-foreground" /></Link> : <h3 className="text-sm font-semibold" dir="auto">{institution}</h3>}
+              <span className="text-xs text-muted-foreground">{t('investmentAccounts.accountCount', { defaultValue: '{{count}} accounts', count: rows.length })}</span>
+            </div>
+            <div className="divide-y divide-border">
+              {rows.map(asset => {
+                const account = investmentAccountList?.find(item => item.id === asset.id)
+                const productKind = account?.product_kind ?? asset.investment_details!.product_kind
+                return <Link key={asset.id} to={`/accounts/investments/${asset.id}`} className="group flex items-center gap-3 px-4 py-4 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary sm:px-5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium break-words">{t(`investments.productKinds.${productKind}`, t('investments.productKinds.investment'))}{account?.masked_number && <span className="ms-2 font-normal text-muted-foreground tabular-nums">{mask(`••${account.masked_number}`)}</span>}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{t(`investments.liquidity.${asset.investment_details!.liquidity.status}`, t('investments.liquidity.unknown'))}</p>
+                  </div>
+                  <div className="shrink-0 text-right tabular-nums">
+                    <p className="text-sm font-semibold">{asset.current_value != null ? mask(formatCurrency(asset.current_value, asset.currency, locale)) : '—'}</p>
+                    {asset.current_value_primary != null && asset.currency !== userCurrency && <p className="mt-1 text-xs text-muted-foreground">{mask(formatCurrency(asset.current_value_primary, userCurrency, locale))}</p>}
+                  </div>
+                  <ChevronRight size={15} className="hidden shrink-0 text-muted-foreground sm:block" />
+                </Link>
+              })}
+            </div>
+          </div>
+        })}
+      </section>
+    )
+  }
 
   function toggleWalletCollapse(id: string) {
     setCollapsedWallets(prev => {
@@ -966,9 +1003,9 @@ export default function AssetsPage() {
   function renderWalletSection(wallet: AssetGroup, walletAssets: Asset[]) {
     const isCollapsed = collapsedWallets.has(wallet.id)
     const isSynced = wallet.source !== 'manual'
-    // Sum in wallet's reported current_value (already computed by backend).
-    // Fall back to per-asset sum if the rollup is stale after a move.
-    const total = walletAssets.reduce((s, a) => s + (a.current_value_primary ?? a.current_value ?? 0), 0) || wallet.current_value_primary || wallet.current_value
+    // This section contains ordinary holdings only; the wallet may also own
+    // investment accounts shown above, so never reuse its combined rollup.
+    const total = walletAssets.reduce((s, a) => s + (a.current_value_primary ?? a.current_value ?? 0), 0)
 
     // Only show the institution as a subtitle when it's actually
     // additional information — if the user hasn't renamed the wallet,
@@ -1051,20 +1088,20 @@ export default function AssetsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        section={t('assets.title')}
+        section={t('nav.groupAnalysis')}
         title={t('assets.title')}
         action={
           canWrite ? (
             <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={() => navigate('/import?tab=investments')} variant="outline" className="gap-1.5">
+              {!investmentOnly && <><Button onClick={() => navigate('/import?tab=investments')} variant="outline" className="gap-1.5">
                 <Upload size={16} />
                 {t('assetImport.action')}
               </Button>
               <Button onClick={openCreateWallet} variant="outline" className="gap-1.5">
                 <Wallet size={16} />
                 {t('assets.newWallet')}
-              </Button>
-              <Button onClick={openCreate} className="gap-1.5">
+              </Button></>}
+              <Button onClick={openCreate} variant={investmentOnly ? 'outline' : 'default'} className="gap-1.5">
                 <Plus size={16} />
                 {t('assets.addAsset')}
               </Button>
@@ -1074,7 +1111,7 @@ export default function AssetsPage() {
       />
 
       {/* Holdings (consolidated by ticker) vs. the buy/sell ledger (#235) */}
-      <div className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
+      {!investmentOnly && <div className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
         <button
           onClick={() => setActiveTab('holdings')}
           className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'holdings' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
@@ -1087,21 +1124,11 @@ export default function AssetsPage() {
         >
           {t('assets.tabTransactions')}
         </button>
-        {rawAssetsList?.some(asset => asset.investment_details) && (
-          <button
-            onClick={() => setActiveTab('activities')}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'activities' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            {t('investments.activities')}
-          </button>
-        )}
-      </div>
+      </div>}
 
-      {activeTab === 'activities' ? (
-        <InvestmentActivities allowedAssetIds={(assetsList ?? []).map(asset => asset.id)} />
-      ) : activeTab === 'transactions' ? (
+      {visibleTab === 'transactions' ? (
         <AssetTransactionsTab
-          holdings={assetsList ?? []}
+          holdings={ordinaryAssets}
           wallets={sortedWallets}
           locale={locale}
           dateLocale={dateLocale}
@@ -1116,6 +1143,7 @@ export default function AssetsPage() {
         <PortfolioChart
           data={portfolioData}
           wallets={sortedWallets}
+          compact={investmentOnly}
           currency={userCurrency}
           locale={locale}
           dateLocale={dateLocale}
@@ -1129,10 +1157,11 @@ export default function AssetsPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Wallets (active assets grouped) */}
-          {(sortedWallets.length > 0 || ungroupedAssets.length > 0) && (
+          {renderInvestmentAccounts()}
+          {/* Wallets contain ordinary holdings; managed accounts are linked above. */}
+          {(holdingWallets.length > 0 || ungroupedAssets.length > 0) && (
             <div className="space-y-4">
-              {sortedWallets.map(w => renderWalletSection(w, assetsByGroup.get(w.id) ?? []))}
+              {holdingWallets.map(w => renderWalletSection(w, assetsByGroup.get(w.id) ?? []))}
 
               {ungroupedAssets.length > 0 && (
                 <div className="space-y-2">
@@ -1155,7 +1184,7 @@ export default function AssetsPage() {
             </div>
           )}
 
-          {activeAssets.length === 0 && soldAssets.length === 0 && (
+          {activeAssets.length === 0 && soldAssets.length === 0 && investmentAssets.length === 0 && (
             <div className="text-center py-16">
               <Package className="mx-auto h-12 w-12 text-muted-foreground/40 mb-3" />
               <p className="text-muted-foreground">{t('assets.noAssets')}</p>
@@ -1734,9 +1763,10 @@ export default function AssetsPage() {
 
 const PORTFOLIO_COLORS = ['#6366F1', '#F43F5E', '#F59E0B', '#10B981', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16']
 
-function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: dateLoc, mask }: {
+function PortfolioChart({ data, wallets, compact = false, currency, locale: loc, dateLocale: dateLoc, mask }: {
   data: { assets: { id: string; name: string; type: string; group_id: string | null }[]; trend: Record<string, unknown>[]; total: number }
   wallets: AssetGroup[]
+  compact?: boolean
   currency: string
   locale: string
   dateLocale: string
@@ -1847,7 +1877,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
       <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
           <h3 className="text-sm font-semibold text-foreground">{t('assets.portfolioValue')}</h3>
-          <div className="flex flex-wrap items-center gap-2">
+          {!compact && <div className="flex flex-wrap items-center gap-2">
             <div role="group" aria-label={t('assets.chartGroupMode')} className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
               <button
                 type="button"
@@ -1884,7 +1914,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
                 {t('assets.chartLines')}
               </button>
             </div>
-          </div>
+          </div>}
         </div>
         <div className="text-left sm:text-right">
           <span className="text-xs text-muted-foreground">{t('assets.total')}</span>
@@ -1893,7 +1923,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
           </p>
         </div>
       </div>
-      <div className="h-56">
+      {(!compact || displayTrend.length > 1) && <div className="h-56">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={displayTrend} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
             <defs>
@@ -1973,16 +2003,16 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
             <Area dataKey="_total" stroke="none" fill="none" dot={false} activeDot={false} hide={!isStacked} />
           </AreaChart>
         </ResponsiveContainer>
-      </div>
-      {/* Legend */}
-      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 px-1">
+      </div>}
+      {/* A single provider already labels this compact overview. */}
+      {(!compact || (displayTrend.length > 1 && sortedSeries.length > 1)) && <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 px-1">
         {sortedSeries.map(s => (
           <div key={s.key} className="flex items-center gap-1.5">
             <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
             <span className="text-[11px] text-muted-foreground">{s.name}</span>
           </div>
         ))}
-      </div>
+      </div>}
     </div>
   )
 }
@@ -2005,7 +2035,7 @@ function renderAssetTradeDot(props: {
   )
 }
 
-function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purchasePrice, purchaseDate, valuationMethod, canWrite, chartOnly = false, isInvestment = false }: {
+function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purchasePrice, purchaseDate, valuationMethod, canWrite, chartOnly = false }: {
   assetId: string; currency: string; locale: string; dateLocale: string
   purchasePrice: number | null; purchaseDate: string | null
   valuationMethod: string
@@ -2013,7 +2043,6 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
   // When true, render only the value-evolution chart (used above the ledger
   // for market-priced holdings) — no manual value form / value-history list.
   chartOnly?: boolean
-  isInvestment?: boolean
 }) {
   const { t } = useTranslation()
   const { mask } = usePrivacyMode()
@@ -2237,7 +2266,6 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
       {/* Value History */}
       {!chartOnly && <div>
         <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('assets.valueHistory')}</p>
-        {isInvestment && <p className="text-xs text-muted-foreground mb-2">{t('investments.balanceChangeHint')}</p>}
         {valuesLoading ? (
           <Skeleton className="h-20 w-full rounded-lg" />
         ) : valuesWithPurchase.length > 0 ? (
@@ -2247,10 +2275,10 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
               // Calculate change from previous entry (next in array since sorted desc)
               const prev = valuesWithPurchase[idx + 1]
               const change = prev ? v.amount - prev.amount : null
-              const changePct = !isInvestment && prev && prev.amount !== 0 ? (change! / prev.amount) * 100 : null
+              const changePct = prev && prev.amount !== 0 ? (change! / prev.amount) * 100 : null
 
               return (
-                <div key={v.id} className={`flex items-center justify-between py-2 px-3 transition-colors ${isInvestment ? 'flex-wrap gap-2' : ''} ${isPurchase ? 'bg-primary/5' : 'hover:bg-muted/30'}`}>
+                <div key={v.id} className={`flex items-center justify-between py-2 px-3 transition-colors ${isPurchase ? 'bg-primary/5' : 'hover:bg-muted/30'}`}>
                   <div className="flex items-center gap-3 min-w-0">
                     <span className="text-sm tabular-nums font-semibold text-foreground">
                       {mask(formatCurrency(v.amount, currency, loc))}
@@ -2262,9 +2290,9 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
                       </span>
                     )}
                   </div>
-                  <div className={`flex items-center gap-2 shrink-0 ${isInvestment ? 'w-full sm:w-auto justify-between sm:justify-start' : ''}`}>
+                  <div className="flex items-center gap-2 shrink-0">
                     <Badge variant={isPurchase ? 'default' : 'outline'} className={`text-[10px] px-1.5 py-0 ${isPurchase ? 'bg-primary/15 text-primary border-primary/30' : ''}`}>
-                      {isInvestment ? t('investments.providerValue') : t(`assets.source${v.source.charAt(0).toUpperCase() + v.source.slice(1)}`)}
+                      {t(`assets.source${v.source.charAt(0).toUpperCase() + v.source.slice(1)}`)}
                     </Badge>
                     <span className="text-[11px] text-muted-foreground tabular-nums">
                       {new Date(v.date + 'T00:00:00').toLocaleDateString(dateLoc)}

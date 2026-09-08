@@ -1,6 +1,7 @@
 # Investment collector integration
 
-The optional Clal connection consumes a cached, scoped investment feed. It
+The optional investment collector connection consumes a cached, scoped feed. Clal
+is the first collector. The same contract supports additional providers. It
 creates one investment asset per actual product identity, with separate groups
 for pension, keren hishtalmut, and provident funds. It creates no bank accounts,
 cash transactions, or share trades. Track balances and projected monthly
@@ -18,6 +19,9 @@ identities must be stable independently of names. Duplicate identities,
 inconsistent currencies, malformed dates and amounts fail validation before
 any records are changed. Source corrections update the same records, and older
 observations cannot replace newer financial values.
+Each product ID starts with its provider namespace (for example `clal:`), and
+product/source providers must agree. Existing valuation, activity and track IDs
+are opaque; they do not require the product prefix.
 Each product explicitly identifies its current valuation. Retrieving older
 history cannot silently replace a current balance with an older figure.
 
@@ -44,11 +48,47 @@ Unknown liquidity stays unknown. These assets contribute to investment and net
 worth totals, while available-cash calculations continue to use cash accounts.
 Source activity and valuation provenance are included in workspace exports.
 
-The Assets page shows savings activity across the portfolio and inside expanded
-products, with contribution-month precision and signed costs preserved. Value
-history labels undated observations explicitly. Source balance changes never
-render as investment return percentages. English and Portuguese translations
-are supplied; other locale bundles use English fallback copy for the new fields.
+## Account navigation and financial ownership
+
+One collector connection owns multiple investment accounts. Each account is a
+read model over its existing `Asset`, `AssetValue` and `AssetActivity` records;
+it is not a second cash-ledger `Account`. Creating cash accounts with the same
+balances would double-count net worth and produce incorrect transaction-based
+balance history. Product groups remain optional collection memberships.
+
+Accounts lists each product beneath its connection. `/connections/:id` is the
+connection's focused destination, including its bank/card accounts if any.
+The route uses a connection ID because a bank aggregator can span more than one
+institution. `/accounts/investments/:id` opens a product's Overview, Activity and
+Reports. Account labels use product kind and the verified final four account
+identifier characters; original provider names are secondary details. Assets
+keeps the portfolio total and compact account links, separate from share-trading
+columns and controls. Modules and collection membership govern visible links.
+
+`GET /api/investment-accounts` accepts an optional `connection_id` and excludes
+archived/sold accounts by default. The detail endpoint accepts a direct asset ID.
+`GET /api/investment-accounts/:id/activities` supports page/limit, kind and year;
+its facets describe all nonzero account activity and remain stable while filtering.
+All queries enforce workspace ownership, including connection filters. Converted
+balances use real cached FX rates; missing conversion rates produce null values.
+
+Current source status and balance valuation date remain separate. Reading a
+cached feed does not make provider data fresh. Unknown balances are unavailable,
+not zero. Month-only activity retains month precision. Reports are separate
+provider period summaries; overlapping periods are not added together. Optional
+raw provider descriptions are collapsed and obey privacy mode.
+
+Older products can receive masked identifiers without recollection through
+`enrich_account_identifiers(session, connection, validated_feed)`. It matches
+existing workspace/connection/source/product identities and shares the sync lock.
+It changes only masked identifier metadata; it cannot create accounts or modify
+source status, values, activities, groups or bank transactions. Run it with an
+already verified cached feed and check financial fingerprints before and after.
+
+An existing investment connection cannot switch source providers: reconnect and sync reject a mismatched verified source before changing saved connection or financial data; use a separate connection for another provider.
+
+The new UI copy is registered in every locale bundle with English fallback
+wording, matching the existing investment-field fallback convention.
 
 The fork publishes backend/frontend `latest` images only from a successful
 `main` CI run. Deploy those published artifacts after migration backup and

@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import { accounts, connections, currencies } from '@/lib/api'
+import { accounts, connections, currencies, investmentAccounts } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
@@ -37,7 +37,10 @@ import { ConnectionSettingsDialog } from '@/components/connection-settings-dialo
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
+import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { formatCurrency } from '@/lib/format'
+import { InvestmentAccountRow } from '@/components/investment-account-row'
+import { filterInvestmentAccounts, investmentSourceState } from '@/lib/investment-account-utils'
 
 // Account types offered in the create/edit dialog. Shared between the manual
 // type selector and the connected-account override selector so the list stays
@@ -65,7 +68,8 @@ export default function AccountsPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite } = useWorkspace()
+  const { canWrite, hasModule } = useWorkspace()
+  const { activeAccountIds, activeWalletIds } = useCollectionFilter()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -88,6 +92,12 @@ export default function AccountsPage() {
   const { data: connectionsList, isLoading: connectionsLoading } = useQuery({
     queryKey: ['connections'],
     queryFn: connections.list,
+  })
+
+  const { data: investmentAccountsList, isLoading: investmentsLoading, isError: investmentsError, refetch: retryInvestments } = useQuery({
+    queryKey: ['investment-accounts'],
+    queryFn: () => investmentAccounts.list(),
+    enabled: hasModule('assets'),
   })
 
   const { data: providersList } = useQuery({
@@ -127,7 +137,7 @@ export default function AccountsPage() {
     queryKey: ['accounts', 'closed'],
     queryFn: () => accounts.list(true),
   })
-  const closedAccounts = closedAccountsList?.filter((a) => a.is_closed) ?? []
+  const closedAccounts = closedAccountsList?.filter((a) => a.is_closed && (activeAccountIds === null || activeAccountIds.includes(a.id))) ?? []
 
   const syncMutation = useMutation({
     mutationFn: (id: string) => connections.sync(id),
@@ -216,9 +226,22 @@ export default function AccountsPage() {
     onError: () => toast.error(t('common.error')),
   })
 
-  const isLoading = accountsLoading || connectionsLoading
-  const manualAccounts = accountsList?.filter((a) => a.connection_id === null) ?? []
-  const bankAccounts = accountsList?.filter((a) => a.connection_id !== null) ?? []
+  const isLoading = accountsLoading || connectionsLoading || (hasModule('assets') && investmentsLoading)
+  const visibleAccounts = (accountsList ?? []).filter(account => activeAccountIds === null || activeAccountIds.includes(account.id))
+  const manualAccounts = visibleAccounts.filter(account => account.connection_id === null)
+  const bankAccounts = visibleAccounts.filter(account => account.connection_id !== null)
+  const allBankAccounts = (accountsList ?? []).filter(account => account.connection_id !== null)
+  const visibleInvestments = filterInvestmentAccounts(hasModule('assets') ? investmentAccountsList ?? [] : [], activeWalletIds)
+  const standaloneInvestments = visibleInvestments.filter(account => account.connection_id === null)
+  const collectionIsActive = activeAccountIds !== null || activeWalletIds !== null
+  const investmentsFailed = hasModule('assets') && investmentsError
+  const visibleConnections = (connectionsList ?? []).filter(connection => !collectionIsActive || investmentsFailed
+    || bankAccounts.some(account => account.connection_id === connection.id)
+    || visibleInvestments.some(account => account.connection_id === connection.id))
+  const settingsHasBankAccounts = allBankAccounts.some(account => account.connection_id === settingsConnection?.id)
+  const settingsHasInvestments = (investmentAccountsList ?? []).some(account => account.connection_id === settingsConnection?.id)
+  const settingsSupportTransactions = settingsHasBankAccounts
+    || (!settingsHasInvestments && settingsConnection?.provider !== 'investment_feed')
 
   return (
     <div className="space-y-6">
@@ -235,6 +258,11 @@ export default function AccountsPage() {
         }
       />
 
+      {investmentsFailed && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4 text-sm">
+        <p>{t('investmentAccounts.loadError', { defaultValue: 'Investment accounts could not be loaded.' })}</p>
+        <Button size="sm" variant="outline" onClick={() => retryInvestments()}>{t('common.retry', { defaultValue: 'Try again' })}</Button>
+      </div>}
+
       {isLoading ? (
         <div className="space-y-3">
           {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
@@ -242,7 +270,7 @@ export default function AccountsPage() {
       ) : (
         <div className="space-y-6">
           {/* Manual Accounts */}
-          <div className="bg-card rounded-xl border border-border shadow-sm">
+          {manualAccounts.length > 0 && <div className="bg-card rounded-xl border border-border shadow-sm">
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
               <h2 className="text-sm font-medium text-muted-foreground">{t('accounts.manualAccounts')}</h2>
             </div>
@@ -305,46 +333,56 @@ export default function AccountsPage() {
                 <p className="text-sm text-muted-foreground">{t('accounts.noManualAccounts')}</p>
               </div>
             )}
-          </div>
+          </div>}
+
+          {standaloneInvestments.length > 0 && <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm" aria-label={t('investmentAccounts.title')}>
+            <h2 className="border-b border-border px-5 py-3.5 text-sm font-medium text-muted-foreground">{t('investmentAccounts.title')}</h2>
+            <div className="divide-y divide-muted">
+              {standaloneInvestments.map(account => <InvestmentAccountRow key={account.id} account={account} />)}
+            </div>
+          </section>}
 
           {/* Bank Connections */}
-          {connectionsList && connectionsList.length > 0 ? (
+          {visibleConnections.length > 0 ? (
             <div className="space-y-3">
-              {connectionsList.map((conn) => {
+              {visibleConnections.map((conn) => {
                 const connAccounts = bankAccounts.filter((a) => a.connection_id === conn.id)
+                const connInvestments = visibleInvestments.filter(account => account.connection_id === conn.id)
+                const sourceNeedsAttention = connInvestments.length > 0 && investmentSourceState(connInvestments) !== 'current'
                 const needsReconnect = conn.status !== 'active'
                 const syncPending = syncMutation.isPending && syncMutation.variables === conn.id
                 return (
                   <div key={conn.id} className="bg-card rounded-xl border border-border shadow-sm">
                     {/* Connection header */}
                     <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
-                      <div className="flex items-center gap-3">
+                      <Link to={`/connections/${conn.id}`} className="flex min-w-0 flex-1 items-center gap-3 rounded-md hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                         {/* One bank's favicon would misrepresent a multi-
                             institution link — fall back to the generic icon. */}
                         <ConnectionLogo
                           logoUrl={(conn.institutions?.length ?? 0) > 1 ? null : conn.logo_url}
                         />
-                        <div>
+                        <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="text-sm font-semibold text-foreground">{getConnectionName(conn, t)}</p>
+                            <p className="text-sm font-semibold break-words" dir="auto">{getConnectionName(conn, t)}</p>
                             <Badge
                               variant={conn.status === 'active' ? 'default' : 'secondary'}
                               className={
-                                conn.status === 'active'
+                                conn.status === 'active' && !sourceNeedsAttention
                                   ? 'text-[10px] px-1.5 py-0 h-4'
                                   : 'text-[10px] px-1.5 py-0 h-4 border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
                               }
                             >
-                              {conn.status}
+                              {sourceNeedsAttention ? t('investmentAccounts.needsAttention', { defaultValue: 'Needs attention' }) : t(`investmentAccounts.connectionStatuses.${conn.status}`, { defaultValue: conn.status })}
                             </Badge>
                           </div>
-                          {conn.last_sync_at && (
+                          {!investmentsFailed && <p className="text-[11px] text-muted-foreground mt-0.5">{t('investmentAccounts.accountCount', { defaultValue: '{{count}} accounts', count: connAccounts.length + connInvestments.length })}</p>}
+                          {conn.last_sync_at && connInvestments.length === 0 && (
                             <p className="text-[11px] text-muted-foreground mt-0.5">
                               {t('accounts.lastSync')}: {new Date(conn.last_sync_at).toLocaleString(dateLocale)}
                             </p>
                           )}
                         </div>
-                      </div>
+                      </Link>
                       {canWrite && (
                         <div className="flex items-center gap-1.5">
                           <Button
@@ -393,7 +431,7 @@ export default function AccountsPage() {
                       )}
                     </div>
                     {/* Accounts list */}
-                    {connAccounts.length > 0 ? (
+                    {connAccounts.length + connInvestments.length > 0 ? (
                       <div className="divide-y divide-muted">
                         {connAccounts.map((acc) => {
                           const cfg = getAccountTypeConfig(acc.type)
@@ -445,21 +483,22 @@ export default function AccountsPage() {
                             </div>
                           )
                         })}
+                        {connInvestments.map(account => <InvestmentAccountRow key={account.id} account={account} />)}
                       </div>
                     ) : (
                       <div className="px-5 py-4">
-                        <p className="text-sm text-muted-foreground">{t('accounts.noAccountsFound')}</p>
+                        <p className="text-sm text-muted-foreground">{investmentsFailed ? t('investmentAccounts.loadError', { defaultValue: 'Investment accounts could not be loaded.' }) : t('accounts.noAccountsFound')}</p>
                       </div>
                     )}
                   </div>
                 )
               })}
             </div>
-          ) : (
+          ) : standaloneInvestments.length === 0 ? (
             <div className="bg-card rounded-xl border border-dashed border-border p-8 text-center">
-              <p className="text-sm text-muted-foreground">{t('accounts.noBankConnections')}</p>
+              <p className="text-sm text-muted-foreground">{collectionIsActive ? t('investmentAccounts.noAccountsInView', { defaultValue: 'No accounts in this view.' }) : t('accounts.noBankConnections')}</p>
             </div>
-          )}
+          ) : null}
 
           {/* Closed Accounts */}
           {closedAccounts.length > 0 && (
@@ -627,6 +666,7 @@ export default function AccountsPage() {
         open={!!settingsConnection}
         onClose={() => setSettingsConnection(null)}
         connection={settingsConnection}
+        supportsTransactionSettings={settingsSupportTransactions}
         supportsAssetSync={
           settingsConnection
             ? providersByName.get(settingsConnection.provider)?.supports_asset_sync ?? false

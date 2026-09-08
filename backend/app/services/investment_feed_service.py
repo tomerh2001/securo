@@ -15,13 +15,31 @@ from app.schemas.investment_feed import InvestmentFeed
 from app.services.asset_group_service import ensure_group_for_connection
 
 GROUP_NAMES = {
-    "pension": "Clal Pension", "keren_hishtalmut": "Clal Keren Hishtalmut",
-    "provident_fund": "Clal Provident Fund", "investment": "Clal Investments",
+    "pension": "Pension", "keren_hishtalmut": "Keren Hishtalmut",
+    "provident_fund": "Provident Fund", "investment": "Investments",
 }
 
 
 def _utc(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def ensure_provider_identity(connection: BankConnection, assets: list[Asset], provider: str) -> None:
+    """Validate a collector source before reconnect or sync changes saved data."""
+    recorded_sources = [
+        (connection.settings or {}).get("investment_source"),
+        {"provider": (connection.credentials or {}).get("source_provider")},
+    ]
+    recorded_sources.extend(
+        ((asset.external_metadata or {}).get("investment_details") or {}).get("source")
+        for asset in assets if asset.connection_id == connection.id
+    )
+    for recorded_source in recorded_sources:
+        if not isinstance(recorded_source, dict):
+            continue
+        recorded_provider = recorded_source.get("provider")
+        if isinstance(recorded_provider, str) and recorded_provider and recorded_provider != provider:
+            raise ValueError("Investment connection provider changed; use a separate connection")
 
 
 async def sync_feed(session: AsyncSession, connection: BankConnection, feed: InvestmentFeed) -> None:
@@ -35,13 +53,17 @@ async def sync_feed(session: AsyncSession, connection: BankConnection, feed: Inv
     # before this lock, so reject a response older than the one already applied.
     await session.execute(select(BankConnection).where(BankConnection.id == connection.id)
                           .with_for_update().execution_options(populate_existing=True))
-    previous_generated_at = (connection.settings or {}).get("investment_feed_generated_at")
-    if previous_generated_at and _utc(datetime.fromisoformat(previous_generated_at)) > _utc(feed.generatedAt):
-        return
     source = connection.provider
     existing = list((await session.scalars(select(Asset).where(
         Asset.workspace_id == connection.workspace_id, Asset.source == source,
     ))).all())
+    # A collector endpoint can be reconfigured, but an existing connection must
+    # never relabel its saved products as another provider. Older connections
+    # may only have the source identity on their owned assets.
+    ensure_provider_identity(connection, existing, feed.source.provider)
+    previous_generated_at = (connection.settings or {}).get("investment_feed_generated_at")
+    if previous_generated_at and _utc(datetime.fromisoformat(previous_generated_at)) > _utc(feed.generatedAt):
+        return
     by_external = {asset.external_id: asset for asset in existing}
     source_details = feed.source.model_dump(mode="json")
     connection.settings = {
@@ -67,8 +89,8 @@ async def sync_feed(session: AsyncSession, connection: BankConnection, feed: Inv
             groups[product.kind] = await ensure_group_for_connection(
                 session, user_id=connection.user_id, connection_id=connection.id,
                 workspace_id=connection.workspace_id, source=source,
-                external_id=f"{connection.workspace_id}:clal:{product.kind}",
-                default_name=GROUP_NAMES[product.kind],
+                external_id=f"{connection.workspace_id}:{product.provider}:{product.kind}",
+                default_name=f"{connection.institution_name} {GROUP_NAMES[product.kind]}",
             )
         if asset is None:
             asset = Asset(
@@ -146,7 +168,11 @@ async def sync_feed(session: AsyncSession, connection: BankConnection, feed: Inv
             for report in product.reportSummaries or []:
                 reports[report.id] = report.model_dump(mode="json")
             details["report_summaries"] = [reports[key] for key in sorted(reports)]
-        asset.external_metadata = {"current_valuation_id": current_id, "investment_details": details}
+        asset.external_metadata = {
+            "current_valuation_id": current_id,
+            "investment_details": details,
+            "masked_number": product.providerProductId[-4:],
+        }
 
         activity_rows = list((await session.scalars(select(AssetActivity).where(
             AssetActivity.asset_id == asset.id,
@@ -172,6 +198,45 @@ async def sync_feed(session: AsyncSession, connection: BankConnection, feed: Inv
             row.description = incoming.description
             row.observed_at = incoming.observedAt
     await session.flush()
+
+
+async def enrich_account_identifiers(
+    session: AsyncSession, connection: BankConnection, feed: InvestmentFeed,
+) -> int:
+    """Backfill display masks from an already verified feed, without financial writes.
+
+    The connection must already own each matched product. Missing products are
+    ignored; this operation cannot create accounts, refresh source status, or
+    change valuations/activity. Only the final four identifier characters are
+    retained, and opaque asset identities are never interpreted as policy numbers.
+    """
+    # Share the sync lock so enrichment cannot overwrite metadata from a
+    # concurrent collection with an older in-memory copy.
+    await session.execute(select(BankConnection).where(BankConnection.id == connection.id)
+                          .with_for_update().execution_options(populate_existing=True))
+    products = {product.id: product for product in feed.products}
+    existing = (await session.scalars(select(Asset).where(
+        Asset.workspace_id == connection.workspace_id,
+        Asset.connection_id == connection.id,
+        Asset.source == connection.provider,
+        Asset.external_id.in_(products),
+    ).execution_options(populate_existing=True))).all()
+    updated = 0
+    for asset in existing:
+        metadata = dict(asset.external_metadata or {})
+        details = metadata.get("investment_details") or {}
+        product = products.get(asset.external_id or "")
+        if product is None:
+            continue
+        if (details.get("source") or {}).get("provider") != product.provider:
+            raise ValueError("Investment account provider does not match its feed")
+        masked_number = product.providerProductId[-4:]
+        if metadata.get("masked_number") != masked_number:
+            metadata["masked_number"] = masked_number
+            asset.external_metadata = metadata
+            updated += 1
+    await session.flush()
+    return updated
 
 
 async def get_activities(session: AsyncSession, workspace_id: uuid.UUID, asset_id: uuid.UUID | None = None):

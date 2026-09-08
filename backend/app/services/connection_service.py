@@ -1028,6 +1028,22 @@ async def handle_oauth_callback(
             raise ValueError("This investment collector is already connected; use reconnect")
 
     if existing_reconnect:
+        if provider_name == "investment_feed":
+            from app.services.investment_feed_service import ensure_provider_identity
+
+            source_provider = connection_data.credentials.get("source_provider")
+            if not isinstance(source_provider, str) or not source_provider:
+                raise ValueError("Investment collector source identity is missing")
+            # Share the sync lock and re-read its latest saved source identity
+            # before any name, credential, or connection-state mutation.
+            await session.execute(select(BankConnection).where(
+                BankConnection.id == existing_reconnect.id,
+            ).with_for_update().execution_options(populate_existing=True))
+            assets = list((await session.scalars(select(Asset).where(
+                Asset.workspace_id == workspace_id,
+                Asset.connection_id == existing_reconnect.id,
+            ).execution_options(populate_existing=True))).all())
+            ensure_provider_identity(existing_reconnect, assets, source_provider)
         existing_reconnect.external_id = connection_data.external_id
         existing_reconnect.institution_name = (
             connection_data.institution_name or existing_reconnect.institution_name
