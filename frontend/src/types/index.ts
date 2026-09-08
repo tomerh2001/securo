@@ -817,6 +817,33 @@ export interface InvestmentDetails {
   observed_at: string | null
 }
 
+/** An investment account uses its existing valuation ledger and identity. */
+export interface InvestmentAccount {
+  id: string
+  name: string
+  currency: string
+  balance: number | null
+  balance_primary: number | null
+  product_kind: InvestmentDetails['product_kind']
+  masked_number: string | null
+  connection_id: string | null
+  group_id: string | null
+  institution_name: string | null
+  institution_logo_url: string | null
+  provider: string
+  is_archived: boolean
+  details: InvestmentDetails
+}
+
+export interface InvestmentActivityPage {
+  items: AssetActivity[]
+  total: number
+  page: number
+  limit: number
+  available_years: number[]
+  available_kinds: string[]
+}
+
 export interface InvestmentReportSummary {
   id: string
   title: string

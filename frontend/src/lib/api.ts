@@ -51,6 +51,8 @@ import type {
   WorkspaceRole,
   Asset,
   AssetActivity,
+  InvestmentAccount,
+  InvestmentActivityPage,
   AssetGroup,
   AssetImportPreview,
   AssetImportResult,
@@ -1105,6 +1107,21 @@ export const dashboard = {
   balanceHistory: async (month?: string, accountIds?: string[]): Promise<BalanceHistory> => {
     const extra = acctIdsParam(accountIds)
     const { data } = await api.get('/dashboard/balance-history', { params: { month, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
+    return data
+  },
+}
+
+export const investmentAccounts = {
+  list: async (connectionId?: string): Promise<InvestmentAccount[]> => {
+    const { data } = await api.get('/investment-accounts', { params: { connection_id: connectionId } })
+    return data
+  },
+  get: async (id: string): Promise<InvestmentAccount> => {
+    const { data } = await api.get(`/investment-accounts/${id}`)
+    return data
+  },
+  activities: async (id: string, params?: { page?: number; limit?: number; kind?: string; year?: number }): Promise<InvestmentActivityPage> => {
+    const { data } = await api.get(`/investment-accounts/${id}/activities`, { params })
     return data
   },
 }

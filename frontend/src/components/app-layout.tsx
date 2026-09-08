@@ -12,7 +12,9 @@ import { auth as authApi, admin as adminApi } from '@/lib/api'
 import { resolveSupportedLang } from '@/lib/i18n'
 import { OnboardingTour } from '@/components/onboarding-tour'
 import { useTheme } from 'next-themes'
-import { accounts as accountsApi } from '@/lib/api'
+import { accounts as accountsApi, connections as connectionsApi, investmentAccounts as investmentAccountsApi } from '@/lib/api'
+import { filterInvestmentAccounts } from '@/lib/investment-account-utils'
+import { getConnectionName } from '@/lib/connection-utils'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -87,7 +89,7 @@ function NavSkeleton() {
 export function AppLayout() {
   const { t } = useTranslation()
   const { user, logout, updateUser } = useAuth()
-  const { activeAccountIds } = useCollectionFilter()
+  const { activeAccountIds, activeWalletIds } = useCollectionFilter()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
   const { theme, setTheme, resolvedTheme } = useTheme()
@@ -182,6 +184,22 @@ export function AppLayout() {
     queryKey: ['accounts'],
     queryFn: () => accountsApi.list(),
   })
+
+  const { data: investmentAccountsList } = useQuery({
+    queryKey: ['investment-accounts'],
+    queryFn: () => investmentAccountsApi.list(),
+    enabled: hasModule('assets') && hasModule('accounts'),
+  })
+  const { data: connectionsList } = useQuery({
+    queryKey: ['connections'],
+    queryFn: connectionsApi.list,
+    enabled: hasModule('accounts'),
+  })
+  const visibleInvestments = filterInvestmentAccounts(hasModule('assets') ? investmentAccountsList ?? [] : [], activeWalletIds)
+  const investmentConnections = (connectionsList ?? []).map(connection => ({
+    connection,
+    accounts: visibleInvestments.filter(account => account.connection_id === connection.id),
+  })).filter(group => group.accounts.length > 0)
 
   const allAccounts = accountsList ?? []
   // When a collection is active, the sidebar list + total reflect only its
@@ -385,11 +403,11 @@ export function AppLayout() {
               const isActive =
                 item.path === '/'
                   ? location.pathname === '/'
-                  : location.pathname.startsWith(item.path)
+                  : location.pathname.startsWith(item.path) || (item.path === '/accounts' && location.pathname.startsWith('/connections/'))
               const Icon = item.icon
               return (
+                <div key={item.key}>
                 <Link
-                  key={item.key}
                   to={item.path}
                   data-tour={`nav-${item.key}`}
                   onClick={() => setSidebarOpen(false)}
@@ -409,6 +427,13 @@ export function AppLayout() {
                   />
                   <span>{t(`nav.${item.key}`)}</span>
                 </Link>
+                {item.path === '/accounts' && investmentConnections.map(({ connection, accounts: investments }) => <Link
+                  key={connection.id} to={`/connections/${connection.id}`} onClick={() => setSidebarOpen(false)}
+                  className={cn('ml-8 mt-0.5 flex min-w-0 items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground', (location.pathname === `/connections/${connection.id}` || investments.some(account => location.pathname === `/accounts/investments/${account.id}`)) ? 'bg-sidebar-accent text-sidebar-foreground' : 'text-sidebar-muted')}>
+                  <span className="truncate font-medium" dir="auto">{getConnectionName(connection, t)}</span>
+                  <span className="shrink-0 text-[10px]">{t('investmentAccounts.accountCount', { count: investments.length, defaultValue: '{{count}} accounts' })}</span>
+                </Link>)}
+                </div>
               )
             })}
           </nav>

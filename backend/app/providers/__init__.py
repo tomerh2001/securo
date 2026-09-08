@@ -19,7 +19,7 @@ _PROVIDERS: dict[str, type[BankProvider]] = {}
 KNOWN_PROVIDERS = [
     {
         "name": "investment_feed",
-        "display_name": "Clal",
+        "display_name": "Investment collector",
         "description": "Pension and savings through your investment collector",
         "flow_type": "token",
         "requires_institution_select": False,

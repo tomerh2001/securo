@@ -22,6 +22,7 @@ interface ConnectionSettingsDialogProps {
   onClose: () => void
   connection: BankConnection | null
   supportsAssetSync?: boolean
+  supportsTransactionSettings?: boolean
 }
 
 export function ConnectionSettingsDialog({
@@ -29,6 +30,7 @@ export function ConnectionSettingsDialog({
   onClose,
   connection,
   supportsAssetSync = false,
+  supportsTransactionSettings = true,
 }: ConnectionSettingsDialogProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -51,13 +53,14 @@ export function ConnectionSettingsDialog({
     mutationFn: () =>
       connections.updateSettings(connection!.id, {
         display_name: displayName.trim() || null,
-        payee_source: payeeSource,
-        import_pending: importPending,
+        ...(supportsTransactionSettings ? { payee_source: payeeSource, import_pending: importPending } : {}),
         // Only persist asset-sync for connectors that actually import holdings.
         ...(supportsAssetSync ? { sync_assets: syncAssets } : {}),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['connections'] })
+      queryClient.invalidateQueries({ queryKey: ['investment-accounts'] })
+      queryClient.invalidateQueries({ queryKey: ['investment-account'] })
       toast.success(t('accounts.updated'))
       onClose()
     },
@@ -82,7 +85,7 @@ export function ConnectionSettingsDialog({
             />
             <p className="text-[11px] text-muted-foreground">{t('connections.displayNameHint')}</p>
           </div>
-          <div className="space-y-2">
+          {supportsTransactionSettings && <div className="space-y-2">
             <Label>{t('connections.payeeSource')}</Label>
             <select
               className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
@@ -95,8 +98,8 @@ export function ConnectionSettingsDialog({
               <option value="description">{t('connections.payeeDescription')}</option>
               <option value="none">{t('connections.payeeNone')}</option>
             </select>
-          </div>
-          <div className="flex items-center justify-between">
+          </div>}
+          {supportsTransactionSettings && <div className="flex items-center justify-between">
             <Label htmlFor="import-pending">{t('connections.importPending')}</Label>
             <input
               id="import-pending"
@@ -105,7 +108,7 @@ export function ConnectionSettingsDialog({
               onChange={(e) => setImportPending(e.target.checked)}
               className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
             />
-          </div>
+          </div>}
           {supportsAssetSync && (
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">

@@ -28,5 +28,8 @@ export function invalidateFinancialQueries(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ['asset-values'] })
   queryClient.invalidateQueries({ queryKey: ['asset-trend'] })
   queryClient.invalidateQueries({ queryKey: ['asset-activities'] })
+  queryClient.invalidateQueries({ queryKey: ['investment-accounts'] })
+  queryClient.invalidateQueries({ queryKey: ['investment-account'] })
+  queryClient.invalidateQueries({ queryKey: ['investment-account-activities'] })
   queryClient.invalidateQueries({ queryKey: ['portfolio-trend'] })
 }
