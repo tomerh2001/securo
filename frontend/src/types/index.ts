@@ -139,6 +139,17 @@ export interface BankConnection {
   institutions: ConnectionInstitution[]
 }
 
+/** Live collector health. Financial freshness is separate from importing saved data. */
+export interface ConnectionSourceStatus {
+  available: boolean
+  observedAt: string
+  source: InvestmentDetails['source']
+  collection: { running: boolean; lastResult: string | null; lastStartedAt: string | null; lastFinishedAt: string | null }
+  schedule: { enabled: boolean; expression: string; description: string | null; timezone: string; nextRunAt: string | null }
+  automaticOtp: { enabled: boolean; ready: boolean; reason: string | null; nextAllowedAt: string | null }
+  import: { lastImportedAt: string | null; checkIntervalMinutes: number; minimumIntervalMinutes: number }
+}
+
 export interface ConnectionSettings {
   payee_source?: 'auto' | 'merchant' | 'payment_data' | 'description' | 'none'
   import_pending?: boolean

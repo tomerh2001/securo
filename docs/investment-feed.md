@@ -47,6 +47,47 @@ source status. The bridge access token remains valid when a provider requires a 
 verification code; replacing that token does not solve a provider login challenge. Scheduled
 Securo pulls only read the cache and never request an SMS.
 
+## Source health and explicit collection
+
+Source collection and Securo import are separate operations. The background
+worker checks connections every hour and imports cached data when the last
+import is at least four hours old. The collector owns its independent institution
+schedule. A successful cached import must not be described as a successful bank
+or pension login. An expired institution session does not expire the collector's
+read token.
+
+The optional source controls use a second administrator-provided capability.
+Configure `INVESTMENT_FEED_CONTROL_TOKEN_FILE` as a mounted secret file (preferred),
+or `INVESTMENT_FEED_CONTROL_TOKEN`, matching the collector's control token. The
+file takes precedence. Do not reuse or replace a connection's read token.
+The provider advertises `supports_source_refresh`; an unconfigured control
+capability returns an actionable unavailable status instead of pretending a
+cached import will resolve an institution login.
+
+`GET /api/connections/:id/source/status` reads the collector's sanitized status,
+schedule, next scheduled time, automatic verification readiness, session state
+and current collection state. It adds Securo's separate last-import timestamp
+and import cadence. It never changes financial data, starts collection, arms an
+OTP receiver or sends SMS. Workspace viewers may inspect this status.
+
+`POST /api/connections/:id/source/refresh` accepts only an empty body/object and
+requires a writable workspace role. It requests one collection through the
+collector's normal guarded runtime, including its configured automatic SMS
+recovery. A 202 response means accepted or already running; it does not mean
+login or collection succeeded. Status is polled for the result, then the normal
+connection sync imports the newly cached records. The collector enforces
+concurrent-run and persistent request limits independently of this UI.
+
+Before exposing controls, Securo verifies the connection's workspace, original
+collector endpoint identity, its own read-token access, and the provider identity
+recorded in connection credentials/settings and linked investment assets. The
+live controller must agree. Securo supplies that verified identity in
+`X-Investment-Provider` when posting so the collector can reject a source switch
+immediately before collection. No caller-supplied URL, provider, token or OTP is
+accepted. Control requests refuse redirects, responses are size-bounded, and only
+typed status fields or fixed errors reach the browser. Credentials and SMS text
+are never part of this interface.
+
 Unknown liquidity stays unknown. These assets contribute to investment and net
 worth totals, while available-cash calculations continue to use cash accounts.
 Source activity and valuation provenance are included in workspace exports.
@@ -96,3 +137,9 @@ wording, matching the existing investment-field fallback convention.
 The fork publishes backend/frontend `latest` images only from a successful
 `main` CI run. Deploy those published artifacts after migration backup and
 normal service review; do not bind-mount application changes into production.
+
+Each configured investment source keeps its own controller capability. Best Invest
+uses `BEST_INVEST_FEED_CONTROL_TOKEN` or `BEST_INVEST_FEED_CONTROL_TOKEN_FILE` with
+its existing `BEST_INVEST_FEED_URL`; it never falls back to Clal control credentials.
+Omit these until that collector implements the control protocol. Connection
+identity checks compare the endpoint and provider selected by that connection.
