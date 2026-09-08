@@ -950,13 +950,13 @@
       "reconnectDescription": "Вставьте новый setup-токен, чтобы обновить это подключение на месте. Существующие счета, транзакции, категории и правила сохранятся.",
       "reconnect": "Переподключить",
       "investment_feed": {
-        "title": "Connect Clal investments",
-        "description": "Import your pension and keren hishtalmut balances, history and available product details from your Clal collector.",
-        "reconnectTitle": "Reconnect Clal investments",
-        "reconnectDescription": "Paste a new connection token from your Clal collector to resume updates.",
-        "tokenLabel": "Clal connection token",
+        "title": "Connect investment accounts",
+        "description": "Import balances, account activity and reports from your investment collector.",
+        "reconnectTitle": "Reconnect investment accounts",
+        "reconnectDescription": "Use a new collector token to reconnect these accounts.",
+        "tokenLabel": "Connection token",
         "tokenPlaceholder": "Paste the connection token",
-        "tokenHelp": "Use the token issued by your home-server collector. Your ID, phone number and SMS code belong in the collector login, not here."
+        "tokenHelp": "Use the access token issued by your investment collector."
       }
     },
     "providers": {
@@ -970,7 +970,7 @@
         "description": "Банки США и других стран через SimpleFIN Bridge"
       },
       "investment_feed": {
-        "description": "Clal pension and keren hishtalmut through your collector."
+        "description": "Pension, savings and investment accounts through your collector."
       }
     },
     "reconnected": "Банк успешно переподключён"

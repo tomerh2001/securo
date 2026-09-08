@@ -942,13 +942,13 @@
       "reconnectDescription": "Cole um novo token de configuração para atualizar esta conexão no lugar. Contas, transações, categorias e regras existentes são preservadas.",
       "reconnect": "Reconectar",
       "investment_feed": {
-        "title": "Conectar investimentos da Clal",
-        "description": "Importe saldos, histórico e detalhes disponíveis da previdência e do keren hishtalmut a partir do coletor da Clal.",
-        "reconnectTitle": "Reconectar investimentos da Clal",
-        "reconnectDescription": "Cole um novo token de conexão do coletor da Clal para retomar as atualizações.",
-        "tokenLabel": "Token de conexão da Clal",
+        "title": "Connect investment accounts",
+        "description": "Import balances, account activity and reports from your investment collector.",
+        "reconnectTitle": "Reconnect investment accounts",
+        "reconnectDescription": "Use a new collector token to reconnect these accounts.",
+        "tokenLabel": "Connection token",
         "tokenPlaceholder": "Cole o token de conexão",
-        "tokenHelp": "Use o token emitido pelo coletor do seu servidor. Documento, telefone e código SMS devem ser usados no acesso ao coletor, não aqui."
+        "tokenHelp": "Use the access token issued by your investment collector."
       }
     },
     "providers": {
@@ -962,7 +962,7 @@
         "description": "Bancos dos EUA e internacionais via SimpleFIN Bridge"
       },
       "investment_feed": {
-        "description": "Previdência e keren hishtalmut da Clal pelo seu coletor."
+        "description": "Pension, savings and investment accounts through your collector."
       }
     },
     "reconnected": "Banco reconectado com sucesso"
