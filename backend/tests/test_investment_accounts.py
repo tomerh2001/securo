@@ -107,22 +107,22 @@ async def test_second_provider_uses_same_contract_and_separate_identity(
     clal, first = await seed_account(session, test_user, test_workspace)
     second = await connection(session, test_user, test_workspace)
     second.external_id = "another-collector"
-    second.institution_name = "Migdal"
-    data = provider_payload("migdal")
+    second.institution_name = "Hachshara Best Invest"
+    data = provider_payload("hachshara_best_invest")
     await sync_feed(session, second, InvestmentFeed.model_validate(data))
     await session.commit()
     result = await client.get("/api/investment-accounts", headers=auth_headers)
     assert result.status_code == 200
-    assert {row["provider"] for row in result.json()} == {"clal", "migdal"}
+    assert {row["provider"] for row in result.json()} == {"clal", "hachshara_best_invest"}
     assert len({row["id"] for row in result.json()}) == 2
     filtered = await client.get("/api/investment-accounts", params={"connection_id": str(second.id)}, headers=auth_headers)
-    assert [row["provider"] for row in filtered.json()] == ["migdal"]
-    assert filtered.json()[0]["institution_name"] == "Migdal"
+    assert [row["provider"] for row in filtered.json()] == ["hachshara_best_invest"]
+    assert filtered.json()[0]["institution_name"] == "Hachshara Best Invest"
     groups = list((await session.scalars(select(AssetGroup))).all())
     assert {group.external_id for group in groups} == {
-        f"{test_workspace.id}:clal:pension", f"{test_workspace.id}:migdal:pension",
+        f"{test_workspace.id}:clal:pension", f"{test_workspace.id}:hachshara_best_invest:pension",
     }
-    assert {group.name for group in groups} == {"Clal Pension", "Migdal Pension"}
+    assert {group.name for group in groups} == {"Clal Pension", "Hachshara Best Invest Pension"}
     assert await session.scalar(select(func.count()).select_from(Account)) == 0
     assert await session.scalar(select(func.count()).select_from(Transaction)) == 0
 
@@ -142,7 +142,7 @@ async def test_connection_provider_change_is_rejected_before_any_mutation(
     else:
         # Even if connection settings were changed, its saved products retain
         # their provider identity and cannot be relabeled by the next pull.
-        conn.settings = {**conn.settings, "investment_source": {"provider": "migdal"}}
+        conn.settings = {**conn.settings, "investment_source": {"provider": "hachshara_best_invest"}}
     await session.flush()
 
     async def snapshot():
@@ -158,7 +158,7 @@ async def test_connection_provider_change_is_rejected_before_any_mutation(
         )
 
     before = await snapshot()
-    data = provider_payload("migdal")
+    data = provider_payload("hachshara_best_invest")
     data["products"][0]["name"] = "A different provider account"
     data["valuations"][0]["amount"] = "99999.00"
     if empty_response:
@@ -188,6 +188,7 @@ async def test_reconnect_checks_verified_source_before_replacing_saved_connectio
     provider.get_investment_feed = AsyncMock(return_value=InvestmentFeed.model_validate(provider_payload()))
     with patch("app.providers.investment_feed.get_settings") as settings:
         settings.return_value.investment_feed_url = "http://collector/investments/v1"
+        settings.return_value.best_invest_feed_url = "http://collector/investments/best-invest/v1"
         conn.external_id = (await provider.handle_oauth_callback("existing-collector-token")).external_id
         await session.commit()
         before = (conn.external_id, conn.institution_name, copy.deepcopy(conn.credentials),
@@ -197,11 +198,11 @@ async def test_reconnect_checks_verified_source_before_replacing_saved_connectio
             (await session.execute(select(AssetValue.id, AssetValue.amount))).all(),
             (await session.execute(select(AssetActivity.id, AssetActivity.amount))).all(),
         )
-        provider.get_investment_feed.return_value = InvestmentFeed.model_validate(provider_payload("migdal"))
+        provider.get_investment_feed.return_value = InvestmentFeed.model_validate(provider_payload("hachshara_best_invest"))
         with patch("app.services.connection_service.get_provider", return_value=provider):
             with pytest.raises(ValueError, match="Investment connection provider changed"):
                 await handle_oauth_callback(
-                    session, test_workspace.id, test_user.id, "replacement-collector-token",
+                    session, test_workspace.id, test_user.id, "best-invest.replacement-collector-token",
                     provider_name="investment_feed", reconnect_connection_id=conn.id,
                 )
             await session.flush()
@@ -332,20 +333,10 @@ async def test_missing_exchange_rate_keeps_native_balance_and_primary_unknown(se
     assert native.balance == native.balance_primary == 10000
 
 
-@pytest.mark.parametrize("provider", ["migdal", "meitav_dash", "provider-123"])
-async def test_connection_name_comes_from_feed(provider):
-    handler = InvestmentFeedProvider()
-    handler.get_investment_feed = AsyncMock(return_value=InvestmentFeed.model_validate(provider_payload(provider)))
-    with patch("app.providers.investment_feed.get_settings") as settings:
-        settings.return_value.investment_feed_url = "http://collector/investments/v1"
-        result = await handler.handle_oauth_callback("test-access-token-only")
-    assert result.institution_name == provider.replace("_", " ").replace("-", " ").title()
-
-
 @pytest.mark.parametrize("mutate", [
     lambda data: data["source"].update(provider="../provider"),
     lambda data: data["source"].update(provider="Clal"),
-    lambda data: data["products"][0].update(provider="migdal"),
+    lambda data: data["products"][0].update(provider="hachshara_best_invest"),
     lambda data: data["products"][0].update(id="unnamespaced", currentValuationId=None),
     lambda data: data["products"][0].update(id="clal:", currentValuationId=None),
 ])

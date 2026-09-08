@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Identifier = Annotated[str, Field(min_length=1, max_length=255)]
-ProviderId = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]{0,49}$")]
+ProviderId = Literal["clal", "hachshara_best_invest"]
 ProductKind = Literal["pension", "keren_hishtalmut", "provident_fund", "investment"]
 Currency = Annotated[str, Field(pattern=r"^[A-Z]{3}$")]
 Coverage = Literal["complete", "partial", "unavailable"]

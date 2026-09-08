@@ -49,7 +49,8 @@ export function TokenConnectDialog({
   }, [open])
 
   const bridgeUrl = PROVIDER_BRIDGE_URLS[provider]
-  const i18nKey = `accounts.tokenConnect.${provider}`
+  const isBestInvest = provider === 'investment_feed' && token.trim().startsWith('best-invest.')
+  const i18nKey = `accounts.tokenConnect.${isBestInvest ? 'best_invest' : provider}`
   const isReconnect = Boolean(reconnectConnectionId)
 
   const handleSubmit = async () => {
