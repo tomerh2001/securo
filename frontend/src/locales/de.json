@@ -943,12 +943,21 @@
       "reconnect": "Erneut verbinden",
       "investment_feed": {
         "title": "Connect investment accounts",
-        "description": "Import balances, account activity and reports from your investment collector.",
+        "description": "Import balances, account activity and reports from your Clal or Hachshara Best Invest collector.",
         "reconnectTitle": "Reconnect investment accounts",
-        "reconnectDescription": "Use a new collector token to reconnect these accounts.",
+        "reconnectDescription": "Use a new collector token for the same provider to reconnect these accounts.",
         "tokenLabel": "Connection token",
         "tokenPlaceholder": "Paste the connection token",
-        "tokenHelp": "Use the access token issued by your investment collector."
+        "tokenHelp": "Use the access token issued by your investment collector. For Hachshara Best Invest, include the best-invest. prefix. Connect each provider separately."
+      },
+      "best_invest": {
+        "title": "Connect Hachshara Best Invest",
+        "description": "Import your Best Invest policies, balances and available reports.",
+        "reconnectTitle": "Reconnect Hachshara Best Invest",
+        "reconnectDescription": "Use a new Best Invest collector token to reconnect these policies.",
+        "tokenLabel": "Connection token",
+        "tokenPlaceholder": "Paste your Best Invest connection token",
+        "tokenHelp": "Keep the best-invest. prefix. Use a separate connection for your Clal accounts."
       }
     },
     "providers": {
@@ -962,7 +971,7 @@
         "description": "US-amerikanische und internationale Banken via SimpleFIN Bridge"
       },
       "investment_feed": {
-        "description": "Pension, savings and investment accounts through your collector."
+        "description": "Clal and Hachshara Best Invest accounts through your investment collector."
       }
     },
     "reconnected": "Bank erfolgreich erneut verbunden"

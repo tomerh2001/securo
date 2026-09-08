@@ -22,6 +22,7 @@ export const CURRENCIES = [
   { code: 'JPY', flag: '\u{1F1EF}\u{1F1F5}', symbol: '¥' },
   { code: 'MXN', flag: '\u{1F1F2}\u{1F1FD}', symbol: '$' },
   { code: 'INR', flag: '\u{1F1EE}\u{1F1F3}', symbol: '₹' },
+  { code: 'ILS', flag: '\u{1F1EE}\u{1F1F1}', symbol: '₪' },
   { code: 'SEK', flag: '\u{1F1F8}\u{1F1EA}', symbol: 'kr' },
   { code: 'DKK', flag: '\u{1F1E9}\u{1F1F0}', symbol: 'kr' },
   { code: 'NOK', flag: '\u{1F1F3}\u{1F1F4}', symbol: 'kr' },
