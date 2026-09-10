@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, field_validator
+from app.schemas.investment_feed import ArchiveValuationProvenance
 
 
 class AssetCreate(BaseModel):
@@ -203,6 +204,7 @@ class AssetValueRead(BaseModel):
     id: uuid.UUID
     asset_id: uuid.UUID
     amount: float
+    source_provenance: ArchiveValuationProvenance | None = None
     date: _date
     source: str
     source_as_of_verified: bool = True

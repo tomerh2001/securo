@@ -1,10 +1,11 @@
 # Investment collector integration
 
-The optional investment collector connection consumes a cached, scoped feed. Clal
-and Hachshara Best Invest are supported as separate source connections. It
+The optional investment collector connection consumes a cached, scoped feed. Clal,
+Hachshara Best Invest and Hapoalim Investments use separate source connections. It
 creates one investment asset per actual product identity, with separate groups
 for pension, keren hishtalmut, provident funds, and investments. It creates no bank accounts,
-cash transactions, or share trades. Track balances and projected monthly
+cash transactions, or position-changing share trades. Brokerage executions are
+kept in a separate source ledger and can be viewed from the investment account. Track balances and projected monthly
 pensions are descriptive information and do not increase net worth twice.
 
 Enable the provider with `INVESTMENT_FEED_ENABLED=true` and set
@@ -14,10 +15,17 @@ collector's investment access token through the normal token connection flow.
 For Best Invest, configure `BEST_INVEST_FEED_URL` and use a
 `best-invest.<token>` connection token. See [Best Invest setup](best-invest.md).
 The selected URL is administrator-controlled; redirects are disabled.
-The feed accepts source providers `clal` and `hachshara_best_invest`.
+For Hapoalim investment accounts, configure `HAPOALIM_INVESTMENT_FEED_URL` and
+use a `hapoalim.<token>` connection token. Its feed source is `hapoalim`; this is
+separate from the bank's SimpleFIN checking connection. Unknown providers and
+missing source endpoints are rejected rather than routed to another collector.
+The feed accepts source providers `clal`, `hachshara_best_invest` and `hapoalim`.
 
 The feed contract is defined in `backend/app/schemas/investment_feed.py`.
-Money is transported as exact decimal strings. Product, valuation, and activity
+Money is transported as exact decimal strings. Valuations preserve two through
+six decimal places, matching the existing `AssetValue` storage precision; cash
+activities, liquidity, tracks, forecasts and report amounts retain two decimals.
+Product, valuation, and activity
 identities must be stable independently of names. Duplicate identities,
 inconsistent currencies, malformed dates and amounts fail validation before
 any records are changed. Source corrections update the same records, and older
@@ -60,9 +68,13 @@ The optional source controls use a second administrator-provided capability.
 Configure `INVESTMENT_FEED_CONTROL_TOKEN_FILE` as a mounted secret file (preferred),
 or `INVESTMENT_FEED_CONTROL_TOKEN`, matching the collector's control token. The
 file takes precedence. Do not reuse or replace a connection's read token.
-The provider advertises `supports_source_refresh`; an unconfigured control
-capability returns an actionable unavailable status instead of pretending a
-cached import will resolve an institution login.
+The provider advertises `supports_source_refresh`; each connection additionally
+exposes `source_refresh_available`. Hapoalim returns false because its collection
+shares the ordinary bank session and has no independent controller. Both the UI
+and direct source-control API reject this unavailable action, even if a reserved
+Hapoalim control token was configured. Cached Sync remains available. Clal and
+Best Invest retain their existing source controls; an unconfigured control
+capability returns an actionable unavailable status.
 
 `GET /api/connections/:id/source/status` reads the collector's sanitized status,
 schedule, next scheduled time, automatic verification readiness, session state
@@ -143,3 +155,65 @@ uses `BEST_INVEST_FEED_CONTROL_TOKEN` or `BEST_INVEST_FEED_CONTROL_TOKEN_FILE` w
 its existing `BEST_INVEST_FEED_URL`; it never falls back to Clal control credentials.
 Omit these until that collector implements the control protocol. Connection
 identity checks compare the endpoint and provider selected by that connection.
+
+The names `HAPOALIM_INVESTMENT_FEED_CONTROL_TOKEN_FILE` and
+`HAPOALIM_INVESTMENT_FEED_CONTROL_TOKEN` are reserved for a future Hapoalim
+controller. They cannot enable collection today. Hapoalim never borrows Clal or
+Best Invest control credentials. Configure its feed URL in both backend and
+worker; no additional control secret is needed for cached imports.
+
+Historical investment values can be imported without inventing a current
+balance: the product's `currentValuationId` remains null, with actual source
+attempt/success timestamps unset when no collection has occurred. The existing
+investment account view retains the dated history and displays the current value
+as unavailable. An empty holdings list does not prove a zero account balance.
+Only an explicit verified current valuation, including a verified zero, selects
+the current value. Source collection remains separate from reading the cache.
+
+
+## Brokerage history and archival values
+
+The optional `executions` feed array defaults to empty. Each execution has a
+stable product-scoped identity, source identity kind, original security and bank
+transaction labels, calendar dates, quantities, prices and cash amounts. When a
+provider lacks immutable execution IDs, `sourceIdKind=natural_key` states that
+limitation explicitly. Duplicate identities are rejected before import. Source
+corrections update the same record; older observations and incomplete snapshots
+cannot remove or replace newer execution history.
+
+Migration `087` adds the `AssetExecution` ledger and nullable
+`AssetValue.source_provenance`; existing valuation storage already supports six
+decimal places. Execute the migration through normal deployment after a database
+backup. Executions are unique by asset/external ID and indexed for workspace,
+asset and trade date. Their JSON payload retains exact decimal strings, including
+original and settlement currencies, separately. No FX rate, portfolio position,
+cost basis, return, checking transaction or account cash balance is inferred.
+Workspace exports include `asset_executions.json` and valuation provenance.
+
+`GET /api/investment-accounts/:id/executions` supports page/limit, kind and year;
+limit is capped at 100. Both asset and rows are workspace-scoped. Year and kind
+facets remain stable while filtering. The account's Securities activity tab
+shows original-currency cash amounts and expandable quantity, unit price,
+settlement details and source labels. Missing source amounts remain unavailable;
+cancelled executions remain visible and are marked cancelled. Privacy mode masks
+amounts and security/source descriptions.
+
+A Sure archive valuation carries typed provenance: original entry/account IDs,
+archive digest, archive observation timestamp and basis, exact original amount,
+and `bankObservationVerified=false`. Securo verifies the source amount, entry ID
+and observation timestamp. Such a value must be dated and cannot be selected as
+the current valuation. Archived values remain labelled in history. Importing
+an archive does not supply a bank collection timestamp or establish the current
+portfolio; only a later verified source observation can do that.
+
+For operator onboarding, the existing native entry point is
+`connection_service.handle_oauth_callback(session, workspace_id, user_id, code,
+provider_name="investment_feed")`, with `provider_name="investment_feed"` and a secret
+`code="hapoalim.<read-token>"`. The API exposes the same token connection flow.
+Follow with native `sync_connection` to import the cached feed. This creates the
+connection and product asset through normal source identity checks and preserves
+historical-only products even when `currentValuationId` and provider attempt/success
+timestamps are null. Reuse the existing connection on later syncs; never recreate
+the account tree or insert a synthetic current value. Hapoalim display masks use
+the final bank account digits from validated `bank-branch-account:securities`
+identities, not the product suffix.

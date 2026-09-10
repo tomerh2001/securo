@@ -17,6 +17,14 @@ if TYPE_CHECKING:
 class BankConnection(Base):
     __tablename__ = "bank_connections"
 
+    @property
+    def source_refresh_available(self) -> bool:
+        from app.providers import get_provider
+        try:
+            return get_provider(self.provider).source_refresh_available(self.credentials or {})
+        except ValueError:
+            return False
+
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     workspace_id: Mapped[uuid.UUID] = mapped_column(

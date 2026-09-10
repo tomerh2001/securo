@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     best_invest_feed_url: str = ""
     best_invest_feed_control_token: SecretStr = SecretStr("")
     best_invest_feed_control_token_file: str = ""
+    hapoalim_investment_feed_url: str = ""
+    hapoalim_investment_feed_control_token: SecretStr = SecretStr("")
+    hapoalim_investment_feed_control_token_file: str = ""
 
     # Frontend
     frontend_url: str = "http://localhost:5173"

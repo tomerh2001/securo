@@ -1,5 +1,7 @@
 """Versioned, source-dated investment snapshots; no bank transactions or trades."""
 import re
+import uuid
+from urllib.parse import quote
 from datetime import date as Date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
@@ -7,7 +9,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Identifier = Annotated[str, Field(min_length=1, max_length=255)]
-ProviderId = Literal["clal", "hachshara_best_invest"]
+ProviderId = Literal["clal", "hachshara_best_invest", "hapoalim"]
 ProductKind = Literal["pension", "keren_hishtalmut", "provident_fund", "investment"]
 Currency = Annotated[str, Field(pattern=r"^[A-Z]{3}$")]
 Coverage = Literal["complete", "partial", "unavailable"]
@@ -30,6 +32,17 @@ def exact_money(value: str) -> str:
     return value
 
 
+def exact_valuation_amount(value: str) -> str:
+    # AssetValue stores six decimal places. Preserve source valuation precision
+    # without widening the cent-only activity, liquidity or track contracts.
+    if not isinstance(value, str) or not re.fullmatch(r"-?(?:0|[1-9]\d*)\.\d{2,6}", value):
+        raise ValueError("Valuation must be a decimal string with two to six fractional digits")
+    amount = Decimal(value)
+    if (value.startswith("-") and amount == 0) or abs(amount) > Decimal("999999999.99"):
+        raise ValueError("Valuation is outside the supported range")
+    return value
+
+
 class Liquidity(FeedModel):
     status: Literal["restricted", "available", "partially_available", "unknown"]
     availableFrom: Date | None
@@ -47,6 +60,30 @@ class ProductCoverage(FeedModel):
     valuations: Coverage
     activities: Coverage
     tracks: Coverage
+    executions: Coverage = "unavailable"
+
+
+class ArchiveValuationProvenance(FeedModel):
+    origin: Literal["sure_archive"]
+    sourceEntryId: uuid.UUID
+    sourceAccountId: uuid.UUID
+    sourceSha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    archiveObservedAt: datetime
+    observationBasis: Literal["archive_capture", "archive_read"]
+    bankObservationVerified: Literal[False]
+    sourceAmount: str
+
+    @field_validator("sourceAmount")
+    @classmethod
+    def validate_amount(cls, value):
+        return exact_valuation_amount(value)
+
+    @field_validator("archiveObservedAt")
+    @classmethod
+    def validate_observation(cls, value):
+        if value.tzinfo is None:
+            raise ValueError("Archive observation timestamp requires a timezone")
+        return value
 
 
 class PensionForecast(FeedModel):
@@ -113,13 +150,67 @@ class InvestmentValuation(FeedModel):
     observedAt: datetime
     amount: str
     currency: Currency
+    provenance: ArchiveValuationProvenance | None = None
 
     @field_validator("amount")
     @classmethod
     def validate_amount(cls, value):
-        if Decimal(exact_money(value)) < 0:
+        if Decimal(exact_valuation_amount(value)) < 0:
             raise ValueError("Valuation cannot be negative")
         return value
+
+    @model_validator(mode="after")
+    def preserve_source_amount(self):
+        if self.provenance is not None and Decimal(self.provenance.sourceAmount) != Decimal(self.amount):
+            raise ValueError("Archived valuation must preserve its source amount")
+        return self
+
+
+ExecutionKind = Literal[
+    "buy", "sell", "dividend", "interest", "redemption", "transfer_in", "transfer_out",
+    "stock_bonus", "other",
+]
+
+
+class InvestmentExecution(FeedModel):
+    """Source-reported security activity; never a derived holding or bank debit."""
+    id: Identifier
+    productId: Identifier
+    sourceId: Identifier
+    sourceIdKind: Literal["natural_key"]
+    kind: ExecutionKind
+    securityId: Identifier
+    isin: Annotated[str, Field(pattern=r"^[A-Z]{2}[A-Z0-9]{9}[0-9]$")] | None
+    symbol: Annotated[str, Field(min_length=1, max_length=100)] | None
+    name: Annotated[str, Field(min_length=1, max_length=500)]
+    tradeDate: Date
+    valueDate: Date | None
+    settlementDate: Date | None
+    cancelDate: Date | None
+    cancelled: bool
+    quantity: str | None
+    unitPrice: str | None
+    netCashAmount: str | None
+    currency: Currency
+    settlementNetCashAmount: str | None
+    settlementCurrency: Currency
+    sourceTradeType: Annotated[str, Field(max_length=400)]
+    sourceTransactionType: Annotated[str, Field(max_length=400)]
+    sourcePaymentType: Annotated[str, Field(max_length=400)] | None
+    observedAt: datetime
+
+    @field_validator("quantity", "unitPrice")
+    @classmethod
+    def validate_quantity_or_price(cls, value):
+        if value is not None and (not isinstance(value, str) or len(value) > 64
+                or not re.fullmatch(r"(?:0|[1-9]\d*)(?:\.\d{1,12})?", value)):
+            raise ValueError("Quantity and price must be nonnegative decimal strings")
+        return value
+
+    @field_validator("netCashAmount", "settlementNetCashAmount")
+    @classmethod
+    def validate_money(cls, value):
+        return exact_money(value) if value is not None else None
 
 
 class InvestmentActivity(FeedModel):
@@ -198,11 +289,12 @@ class InvestmentFeed(FeedModel):
     valuations: list[InvestmentValuation]
     activities: list[InvestmentActivity]
     tracks: list[InvestmentTrack]
+    executions: list[InvestmentExecution] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_identity_and_currency(self):
         products = {product.id: product for product in self.products}
-        for rows in [self.products, self.valuations, self.activities, self.tracks]:
+        for rows in [self.products, self.valuations, self.activities, self.tracks, self.executions]:
             if len({row.id for row in rows}) != len(rows):
                 raise ValueError("Duplicate source identity")
         dated_values: set[tuple[str, Date | None]] = set()
@@ -212,7 +304,28 @@ class InvestmentFeed(FeedModel):
                 raise ValueError("Unknown product or inconsistent currency")
             if row.observedAt.tzinfo is None:
                 raise ValueError("Observation timestamps require a timezone")
+        execution_keys = set()
+        for execution in self.executions:
+            if execution.productId not in products:
+                raise ValueError("Execution identifies an unknown product")
+            if execution.observedAt.tzinfo is None:
+                raise ValueError("Observation timestamps require a timezone")
+            key = (execution.productId, execution.sourceId)
+            if key in execution_keys:
+                raise ValueError("Duplicate execution source identity")
+            execution_keys.add(key)
+            encoded_source_id = quote(execution.sourceId, safe="~()*!'")
+            if (not re.fullmatch(r"natural-key-v1:[a-f0-9]{64}", execution.sourceId)
+                    or execution.id != f"{execution.productId}:execution:{encoded_source_id}"):
+                raise ValueError("Execution identity must match its product and source identity")
         for row in self.valuations:
+            if row.provenance is not None and (
+                self.source.provider != "hapoalim" or row.asOf is None
+                or row.id != f"sure:entry:{row.provenance.sourceEntryId}"
+                or row.observedAt != row.provenance.archiveObservedAt
+                or products[row.productId].currentValuationId == row.id
+            ):
+                raise ValueError("Archive valuation must remain historical with its original source identity")
             key = (row.productId, row.asOf)
             if key in dated_values:
                 raise ValueError("Multiple valuations for the same source date")

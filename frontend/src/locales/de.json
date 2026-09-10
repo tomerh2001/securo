@@ -943,12 +943,12 @@
       "reconnect": "Erneut verbinden",
       "investment_feed": {
         "title": "Connect investment accounts",
-        "description": "Import balances, account activity and reports from your Clal or Hachshara Best Invest collector.",
+        "description": "Import balances, account activity and available reports from your Clal, Hachshara Best Invest or Hapoalim investment collector.",
         "reconnectTitle": "Reconnect investment accounts",
         "reconnectDescription": "Use a new collector token for the same provider to reconnect these accounts.",
         "tokenLabel": "Connection token",
         "tokenPlaceholder": "Paste the connection token",
-        "tokenHelp": "Use the access token issued by your investment collector. For Hachshara Best Invest, include the best-invest. prefix. Connect each provider separately."
+        "tokenHelp": "Use the access token issued by your investment collector. Keep the best-invest. or hapoalim. prefix when present. Connect each provider separately."
       },
       "best_invest": {
         "title": "Connect Hachshara Best Invest",
@@ -958,6 +958,15 @@
         "tokenLabel": "Connection token",
         "tokenPlaceholder": "Paste your Best Invest connection token",
         "tokenHelp": "Keep the best-invest. prefix. Use a separate connection for your Clal accounts."
+      },
+      "hapoalim": {
+        "title": "Connect Hapoalim Investments",
+        "description": "Import the available balance and account history from your Hapoalim investment collector.",
+        "reconnectTitle": "Reconnect Hapoalim Investments",
+        "reconnectDescription": "Use a new Hapoalim investment collector token to reconnect this account.",
+        "tokenLabel": "Connection token",
+        "tokenPlaceholder": "Paste your Hapoalim investment connection token",
+        "tokenHelp": "Keep the hapoalim. prefix. Use a separate connection for your other investment providers."
       }
     },
     "providers": {
@@ -971,7 +980,7 @@
         "description": "US-amerikanische und internationale Banken via SimpleFIN Bridge"
       },
       "investment_feed": {
-        "description": "Clal and Hachshara Best Invest accounts through your investment collector."
+        "description": "Clal, Hachshara Best Invest and Hapoalim investment accounts through your investment collector."
       }
     },
     "reconnected": "Bank erfolgreich erneut verbunden"
@@ -2496,6 +2505,35 @@
     "verificationUnavailable": "Receiver unavailable",
     "verificationConnecting": "Reconnecting",
     "skippedTitle": "The update could not start",
-    "skippedHelp": "The provider connection is in use by another task. Your saved data is available; try again shortly."
+    "skippedHelp": "The provider connection is in use by another task. Your saved data is available; try again shortly.",
+    "hapoalimCachedHelp": "Investment data is collected with your bank connection. Sync imports saved data without starting a bank login."
+  },
+  "investmentExecutions": {
+    "title": "Securities activity",
+    "description": "Bank-reported trades and security payments, with amounts in their original currencies.",
+    "details": "View details",
+    "quantity": "Quantity",
+    "unitPrice": "Price per unit",
+    "settlementAmount": "Settlement amount",
+    "valueDate": "Value date",
+    "settlementDate": "Settlement date",
+    "cancelDate": "Cancellation date",
+    "cancelled": "Cancelled",
+    "isin": "ISIN",
+    "providerType": "Bank description",
+    "loadError": "Securities activity could not be loaded.",
+    "empty": "No securities activity has been imported for this selection.",
+    "archiveValue": "Historical archive",
+    "kinds": {
+      "buy": "Buy",
+      "sell": "Sell",
+      "dividend": "Dividend",
+      "interest": "Interest",
+      "redemption": "Redemption",
+      "transfer_in": "Transfer in",
+      "transfer_out": "Transfer out",
+      "stock_bonus": "Stock bonus",
+      "other": "Other"
+    }
   }
 }

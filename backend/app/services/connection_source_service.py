@@ -23,10 +23,13 @@ async def _verified_source(session: AsyncSession, connection_id: uuid.UUID, work
         provider = get_provider(connection.provider)
     except ValueError:
         raise SourceControlError("source_controls_not_configured") from None
-    if not provider.supports_source_refresh:
-        raise SourceControlError("source_controls_unsupported", status_code=400)
-
     credentials = connection.credentials or {}
+    try:
+        available = provider.source_refresh_available(credentials)
+    except ValueError:
+        raise SourceControlError("source_identity_mismatch", status_code=409) from None
+    if not available:
+        raise SourceControlError("source_controls_unsupported", status_code=400)
     verified_provider = None
     if isinstance(provider, InvestmentFeedProvider):
         # A server URL change cannot grant a pre-existing connection control of

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from app.schemas.investment_feed import (
     ActivityKind,
     InvestmentReportSummary,
+    InvestmentExecution,
     InvestmentSource,
     InvestmentTrack,
     Liquidity,
@@ -61,6 +62,15 @@ class InvestmentAccountActivityRead(BaseModel):
 
 class InvestmentAccountActivitiesRead(BaseModel):
     items: list[InvestmentAccountActivityRead]
+    total: int
+    page: int
+    limit: int
+    available_years: list[int]
+    available_kinds: list[str]
+
+
+class InvestmentAccountExecutionsRead(BaseModel):
+    items: list[InvestmentExecution]
     total: int
     page: int
     limit: int

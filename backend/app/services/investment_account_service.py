@@ -8,13 +8,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
 from app.models.asset_activity import AssetActivity
+from app.models.asset_execution import AssetExecution
 from app.models.bank_connection import BankConnection
 from app.schemas.investment_account import (
     InvestmentAccountActivitiesRead,
     InvestmentAccountActivityRead,
     InvestmentAccountRead,
+    InvestmentAccountExecutionsRead,
     InvestmentDetails,
 )
+from app.schemas.investment_feed import InvestmentExecution
 from app.services.asset_service import _compute_current_value, _get_latest_value
 from app.services.fx_rate_service import _resolve_rate
 
@@ -111,6 +114,33 @@ async def get_activities(
             "currency": row.currency, "description": row.description, "source_id": row.source_id,
             "observed_at": row.observed_at,
         }) for row in rows],
+        total=total, page=page, limit=limit,
+        available_years=[int(value) for value in years], available_kinds=list(kinds),
+    )
+
+
+async def get_executions(
+    session: AsyncSession, workspace_id: uuid.UUID, asset_id: uuid.UUID,
+    *, page: int = 1, limit: int = 25, kind: str | None = None, year: int | None = None,
+) -> InvestmentAccountExecutionsRead:
+    asset, _ = await _account_row(session, workspace_id, asset_id)
+    scope = [AssetExecution.asset_id == asset.id, AssetExecution.workspace_id == workspace_id]
+    execution_year = func.extract("year", AssetExecution.trade_date)
+    years = (await session.scalars(select(execution_year).where(*scope).distinct()
+                                  .order_by(execution_year.desc()))).all()
+    kinds = (await session.scalars(select(AssetExecution.kind).where(*scope).distinct()
+                                  .order_by(AssetExecution.kind))).all()
+    filters = list(scope)
+    if kind is not None:
+        filters.append(AssetExecution.kind == kind)
+    if year is not None:
+        filters.append(execution_year == year)
+    total = await session.scalar(select(func.count()).select_from(AssetExecution).where(*filters)) or 0
+    rows = (await session.scalars(select(AssetExecution).where(*filters)
+                                  .order_by(AssetExecution.trade_date.desc(), AssetExecution.id)
+                                  .offset((page - 1) * limit).limit(limit))).all()
+    return InvestmentAccountExecutionsRead(
+        items=[InvestmentExecution.model_validate(row.data) for row in rows],
         total=total, page=page, limit=limit,
         available_years=[int(value) for value in years], available_kinds=list(kinds),
     )

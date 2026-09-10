@@ -137,6 +137,7 @@ export interface BankConnection {
   // Institutions this link spans (issue #345). Empty for one-institution
   // providers — institution_name covers those.
   institutions: ConnectionInstitution[]
+  source_refresh_available?: boolean
 }
 
 /** Live collector health. Financial freshness is separate from importing saved data. */
@@ -811,7 +812,7 @@ export interface Asset {
 export interface InvestmentDetails {
   product_kind: 'pension' | 'keren_hishtalmut' | 'provident_fund' | 'investment'
   liquidity: { status: 'restricted' | 'available' | 'partially_available' | 'unknown'; availableFrom: string | null; availableAmount: string | null }
-  coverage: { valuations: 'complete' | 'partial' | 'unavailable'; activities: 'complete' | 'partial' | 'unavailable'; tracks: 'complete' | 'partial' | 'unavailable' }
+  coverage: { valuations: 'complete' | 'partial' | 'unavailable'; activities: 'complete' | 'partial' | 'unavailable'; tracks: 'complete' | 'partial' | 'unavailable'; executions?: 'complete' | 'partial' | 'unavailable' }
   forecast: { monthlyPension: string; currency: string; asOf: string | null } | null
   tracks: InvestmentTrack[]
   report_summaries?: InvestmentReportSummary[]
@@ -848,6 +849,42 @@ export interface InvestmentAccount {
 
 export interface InvestmentActivityPage {
   items: AssetActivity[]
+  total: number
+  page: number
+  limit: number
+  available_years: number[]
+  available_kinds: string[]
+}
+
+export interface InvestmentExecution {
+  id: string
+  productId: string
+  sourceId: string
+  sourceIdKind: 'natural_key'
+  kind: 'buy' | 'sell' | 'dividend' | 'interest' | 'redemption' | 'transfer_in' | 'transfer_out' | 'stock_bonus' | 'other'
+  securityId: string
+  isin: string | null
+  symbol: string | null
+  name: string
+  tradeDate: string
+  valueDate: string | null
+  settlementDate: string | null
+  cancelDate: string | null
+  cancelled: boolean
+  quantity: string | null
+  unitPrice: string | null
+  netCashAmount: string | null
+  currency: string
+  settlementNetCashAmount: string | null
+  settlementCurrency: string
+  sourceTradeType: string
+  sourceTransactionType: string
+  sourcePaymentType: string | null
+  observedAt: string
+}
+
+export interface InvestmentExecutionPage {
+  items: InvestmentExecution[]
   total: number
   page: number
   limit: number
@@ -987,6 +1024,7 @@ export interface AssetValue {
   id: string
   asset_id: string
   amount: number
+  source_provenance?: { origin: 'sure_archive'; bankObservationVerified: false; sourceAmount: string } | null
   date: string
   source: string
   source_as_of_verified?: boolean

@@ -8,7 +8,7 @@ import type { AssetActivity, InvestmentAccount } from '@/types'
 const modules = vi.hoisted(() => ({ accounts: true }))
 vi.mock('@/contexts/workspace-context', () => ({ useWorkspace: () => ({ hasModule: (module: string) => module !== 'accounts' || modules.accounts }) }))
 
-vi.mock('@/lib/api', () => ({ assets: { values: vi.fn() }, investmentAccounts: { get: vi.fn(), activities: vi.fn() } }))
+vi.mock('@/lib/api', () => ({ assets: { values: vi.fn() }, investmentAccounts: { get: vi.fn(), activities: vi.fn(), executions: vi.fn() } }))
 vi.mock('@/hooks/use-display-locale', () => ({ useDisplayLocale: () => 'en-US', useDateLocale: () => 'en-US' }))
 vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ user: { preferences: { currency_display: 'ILS' } } }) }))
 vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => false }))
@@ -35,6 +35,7 @@ beforeEach(() => {
   modules.accounts = true
   vi.mocked(investmentAccounts.get).mockResolvedValue(account)
   vi.mocked(investmentAccounts.activities).mockResolvedValue({ items: rows, total: rows.length, page: 1, limit: 5, available_years: [2026], available_kinds: ['employee_contribution'] })
+  vi.mocked(investmentAccounts.executions).mockResolvedValue({ items: [], total: 0, page: 1, limit: 25, available_years: [], available_kinds: [] })
   vi.mocked(assets.values).mockResolvedValue([{ id: 'value-one', asset_id: account.id, amount: account.balance!, date: '2026-08-31', source: 'sync' }])
 })
 
@@ -54,6 +55,22 @@ describe('InvestmentAccountDetailPage', () => {
     expect(screen.queryByText('Annual summary')).not.toBeInTheDocument()
     expect(screen.getByText(account.name)).not.toBeVisible()
     expect(screen.queryByRole('img', { name: 'Recorded account balances over time' })).not.toBeInTheDocument()
+  })
+
+  it('opens Hapoalim securities history while the current value remains unknown', async () => {
+    vi.mocked(investmentAccounts.get).mockResolvedValue({
+      ...account, provider: 'hapoalim', product_kind: 'investment', balance: null, balance_primary: null,
+      details: { ...account.details, product_kind: 'investment', valuation_date: null, source: {
+        ...account.details.source, provider: 'hapoalim', status: 'never_synced', lastAttemptAt: null, lastSuccessAt: null,
+      } },
+    })
+    const { user } = renderWithProviders(<InvestmentAccountDetailPage />, options)
+    await screen.findByRole('heading', { level: 1 })
+    expect(within(screen.getByRole('region', { name: 'Current balance' })).getByText('—')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'Securities activity' }))
+    await waitFor(() => expect(investmentAccounts.executions).toHaveBeenCalledWith('pension-one', { page: 1, limit: 25 }))
+    expect(screen.getByText('No securities activity has been imported for this selection.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /add transaction|transfer|buy|sell/i })).not.toBeInTheDocument()
   })
 
   it('opens full activity and reports in separate tabs without cash transaction tools', async () => {

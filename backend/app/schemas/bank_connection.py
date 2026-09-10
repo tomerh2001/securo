@@ -34,6 +34,7 @@ class BankConnectionRead(BankConnectionBase):
     # Institutions this link spans. Empty for providers that are one
     # institution per connection — institution_name above covers those.
     institutions: list[ConnectionInstitutionRead] = []
+    source_refresh_available: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
