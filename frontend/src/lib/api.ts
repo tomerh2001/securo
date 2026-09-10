@@ -54,6 +54,7 @@ import type {
   AssetActivity,
   InvestmentAccount,
   InvestmentActivityPage,
+  InvestmentExecutionPage,
   AssetGroup,
   AssetImportPreview,
   AssetImportResult,
@@ -1131,6 +1132,10 @@ export const investmentAccounts = {
   },
   activities: async (id: string, params?: { page?: number; limit?: number; kind?: string; year?: number }): Promise<InvestmentActivityPage> => {
     const { data } = await api.get(`/investment-accounts/${id}/activities`, { params })
+    return data
+  },
+  executions: async (id: string, params?: { page?: number; limit?: number; kind?: string; year?: number }): Promise<InvestmentExecutionPage> => {
+    const { data } = await api.get(`/investment-accounts/${id}/executions`, { params })
     return data
   },
 }

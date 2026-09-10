@@ -12,8 +12,15 @@ from app.providers.base import BankProvider, ConnectionData, SessionExpiredError
 from app.schemas.connection_source import CollectorControlStatus, SourceRefreshResult
 from app.schemas.investment_feed import InvestmentFeed
 
-SOURCE_NAMES = {"clal": "Clal", "hachshara_best_invest": "Hachshara Best Invest"}
-BEST_INVEST_TOKEN_PREFIX = "best-invest."
+SOURCE_NAMES = {
+    "clal": "Clal", "hachshara_best_invest": "Hachshara Best Invest",
+    "hapoalim": "Hapoalim Investments",
+}
+SOURCE_CONFIG_PREFIXES = {
+    "clal": "investment_feed", "hachshara_best_invest": "best_invest_feed",
+    "hapoalim": "hapoalim_investment_feed",
+}
+TOKEN_PREFIXES = {"best-invest.": "hachshara_best_invest", "hapoalim.": "hapoalim"}
 
 
 def investment_source_provider(credentials: dict) -> str:
@@ -26,11 +33,9 @@ def investment_source_provider(credentials: dict) -> str:
 
 def _endpoint(source_provider: str) -> str:
     settings = get_settings()
-    endpoint = (
-        settings.best_invest_feed_url
-        if source_provider == "hachshara_best_invest"
-        else settings.investment_feed_url
-    )
+    if source_provider not in SOURCE_CONFIG_PREFIXES:
+        raise ValueError("Unsupported investment source")
+    endpoint = getattr(settings, f"{SOURCE_CONFIG_PREFIXES[source_provider]}_url")
     if not isinstance(endpoint, str) or not endpoint.startswith(("http://", "https://")):
         raise ValueError("Investment collector endpoint is not configured")
     return endpoint
@@ -43,6 +48,13 @@ class InvestmentFeedProvider(BankProvider):
     @property
     def supports_source_refresh(self) -> bool:
         return True
+
+    def source_refresh_available(self, credentials: dict) -> bool:
+        source = investment_source_provider(credentials)
+        # Hapoalim collection shares the ordinary bank login; its collector has
+        # no independent refresh protocol yet. A reserved token alone cannot
+        # make that action available. Other collectors retain their controls.
+        return source != "hapoalim"
 
     @staticmethod
     def configured_external_id(source_provider: str = "clal") -> str:
@@ -57,9 +69,11 @@ class InvestmentFeedProvider(BankProvider):
         if not isinstance(code, str):
             raise ValueError("Invalid investment access token")
         source_provider = "clal"
-        if code.startswith(BEST_INVEST_TOKEN_PREFIX):
-            source_provider = "hachshara_best_invest"
-            code = code[len(BEST_INVEST_TOKEN_PREFIX):]
+        for prefix, selected_source in TOKEN_PREFIXES.items():
+            if code.startswith(prefix):
+                source_provider = selected_source
+                code = code[len(prefix):]
+                break
         if not re.fullmatch(r"[A-Za-z0-9_\-.~]{20,512}", code):
             raise ValueError("Invalid investment access token")
         credentials = {"token": code, "source_provider": source_provider}
@@ -82,13 +96,17 @@ class InvestmentFeedProvider(BankProvider):
     async def _control_request(
         self, method: str, action: str, source_provider: str, expected_provider: str | None = None,
     ):
+        if source_provider == "hapoalim":
+            raise SourceControlError("source_controls_unsupported", status_code=400)
         settings = get_settings()
         # Read capability and control capability are deliberately independent.
         # URL, filesystem path and token are administrator configuration only.
         try:
             # Each source has an independent control capability; never fall back
             # from a second collector to the first collector's credential.
-            prefix = "best_invest_feed" if source_provider == "hachshara_best_invest" else "investment_feed"
+            if source_provider not in SOURCE_CONFIG_PREFIXES:
+                raise SourceControlError("source_identity_mismatch", status_code=409)
+            prefix = SOURCE_CONFIG_PREFIXES[source_provider]
             token_file = getattr(settings, f"{prefix}_control_token_file")
             token = (Path(token_file).read_text().strip() if token_file
                      else getattr(settings, f"{prefix}_control_token").get_secret_value())

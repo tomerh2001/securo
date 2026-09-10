@@ -20,6 +20,7 @@ import {
   InvestmentReports,
 } from '@/components/investment-details'
 import type { InvestmentAccount } from '@/types'
+import { InvestmentExecutionHistory } from '@/components/investment-executions'
 
 function AccountOverview({ account, onActivity }: { account: InvestmentAccount; onActivity: () => void }) {
   const { t } = useTranslation()
@@ -59,6 +60,7 @@ function AccountOverview({ account, onActivity }: { account: InvestmentAccount; 
                     <p className="text-muted-foreground">{formatInvestmentDate(point.date, dateLocale)}</p>
                     <p className="mt-1 font-semibold tabular-nums">{mask(formatCurrency(point.amount, account.currency, locale))}</p>
                     {point.source_as_of_verified === false && <p className="mt-1 text-muted-foreground">{t('investmentAccounts.recordedDate', { defaultValue: 'Date recorded' })}</p>}
+                    {point.source_provenance?.origin === 'sure_archive' && <p className="mt-1 text-muted-foreground">{t('investmentExecutions.archiveValue')}</p>}
                   </div>
                 }} />
                 <Area type="linear" dataKey="amount" stroke="var(--primary)" fill="var(--primary)" fillOpacity={0.08} strokeWidth={2} dot={{ r: 3 }} />
@@ -69,7 +71,7 @@ function AccountOverview({ account, onActivity }: { account: InvestmentAccount; 
             <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">{t('investmentAccounts.viewBalances', { defaultValue: 'View recorded balances' })}</summary>
             <dl className="mt-3 divide-y divide-border">
               {[...points].reverse().map(point => <div key={point.id} className="flex items-start justify-between gap-4 py-2 text-sm">
-                <dt className="text-muted-foreground">{formatInvestmentDate(point.date, dateLocale)}{point.source_as_of_verified === false && <span className="block text-xs">{t('investmentAccounts.recordedDate', { defaultValue: 'Date recorded' })}</span>}</dt>
+                <dt className="text-muted-foreground">{formatInvestmentDate(point.date, dateLocale)}{point.source_as_of_verified === false && <span className="block text-xs">{t('investmentAccounts.recordedDate', { defaultValue: 'Date recorded' })}</span>}{point.source_provenance?.origin === 'sure_archive' && <span className="block text-xs">{t('investmentExecutions.archiveValue')}</span>}</dt>
                 <dd className="font-medium tabular-nums">{mask(formatCurrency(point.amount, account.currency, locale))}</dd>
               </div>)}
             </dl>
@@ -128,7 +130,9 @@ export default function InvestmentAccountDetailPage() {
     queryFn: () => investmentAccounts.get(id!),
     enabled: !!id,
   })
-  const tab = ['activity', 'reports'].includes(searchParams.get('tab') ?? '') ? searchParams.get('tab')! : 'overview'
+  const hasExecutions = account?.provider === 'hapoalim' || (account?.details.coverage.executions != null && account.details.coverage.executions !== 'unavailable')
+  const availableTabs = ['activity', 'reports', ...(hasExecutions ? ['executions'] : [])]
+  const tab = availableTabs.includes(searchParams.get('tab') ?? '') ? searchParams.get('tab')! : 'overview'
   function changeTab(value: string) {
     const next = new URLSearchParams(searchParams)
     if (value === 'overview') next.delete('tab')
@@ -182,10 +186,12 @@ export default function InvestmentAccountDetailPage() {
         <TabsList variant="line" aria-label={t('investmentAccounts.accountSections', { defaultValue: 'Account sections' })}>
           <TabsTrigger value="overview">{t('investmentAccounts.overview', { defaultValue: 'Overview' })}</TabsTrigger>
           <TabsTrigger value="activity">{t('investmentAccounts.activity', { defaultValue: 'Activity' })}</TabsTrigger>
+          {hasExecutions && <TabsTrigger value="executions">{t('investmentExecutions.title')}</TabsTrigger>}
           <TabsTrigger value="reports">{t('investmentAccounts.reports', { defaultValue: 'Reports' })}</TabsTrigger>
         </TabsList>
         <TabsContent value="overview"><AccountOverview account={account} onActivity={() => changeTab('activity')} /></TabsContent>
         <TabsContent value="activity"><InvestmentActivityHistory key={account.id} accountId={account.id} /></TabsContent>
+        {hasExecutions && <TabsContent value="executions"><InvestmentExecutionHistory key={account.id} accountId={account.id} /></TabsContent>}
         <TabsContent value="reports"><InvestmentReports reports={details.report_summaries ?? []} currency={account.currency} /></TabsContent>
       </Tabs>
     </div>

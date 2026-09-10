@@ -12,7 +12,7 @@ const state = vi.hoisted(() => ({
 const api = vi.hoisted(() => ({
   accounts: { list: vi.fn() },
   investmentAccounts: { list: vi.fn() },
-  connections: { list: vi.fn(), getProviders: vi.fn(), updateSettings: vi.fn(), sync: vi.fn() },
+  connections: { list: vi.fn(), getProviders: vi.fn(), updateSettings: vi.fn(), sync: vi.fn(), sourceStatus: vi.fn() },
 }))
 vi.mock('@/lib/api', () => api)
 vi.mock('@/hooks/use-display-locale', () => ({ useDisplayLocale: () => 'en-US', useDateLocale: () => 'en-US' }))
@@ -54,6 +54,21 @@ beforeEach(() => {
 })
 
 describe('connection account destination', () => {
+  it('keeps cached Hapoalim sync available without polling an unsupported controller', async () => {
+    api.connections.list.mockResolvedValue([connectionFixture({ source_refresh_available: false, institution_name: 'Hapoalim Investments' })])
+    api.connections.getProviders.mockResolvedValue([{ name: 'investment_feed', supports_source_refresh: true, supports_asset_sync: true, flow_type: 'token' }])
+    api.accounts.list.mockResolvedValue([])
+    const investment = investmentAccountFixture({ provider: 'hapoalim', balance: null, balance_primary: null })
+    investment.details.source = { ...investment.details.source, provider: 'hapoalim', status: 'never_synced', lastSuccessAt: null, lastAttemptAt: null }
+    api.investmentAccounts.list.mockResolvedValue([investment])
+    const { user } = renderPage()
+    await findInvestmentAccountLink('pension-account')
+    await user.click(screen.getByRole('tab', { name: new RegExp(t('connectionHealth.title')) }))
+    expect(await screen.findByText(t('connectionHealth.hapoalimCachedHelp'))).toBeInTheDocument()
+    expect(api.connections.sourceStatus).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: t('connectionHealth.importSaved') }))
+    await waitFor(() => expect(api.connections.sync).toHaveBeenCalledWith('clal-connection'))
+  })
   it('loads the requested provider only and shows each bank and investment account once', async () => {
     renderPage()
     expect(await findInvestmentAccountLink('pension-account')).toHaveAttribute('href', '/accounts/investments/pension-account')

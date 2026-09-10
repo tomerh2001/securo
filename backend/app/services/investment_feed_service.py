@@ -1,4 +1,5 @@
 """Import verified savings data without manufacturing bank payments or trades."""
+import re
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -8,16 +9,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
 from app.models.asset_activity import AssetActivity
+from app.models.asset_execution import AssetExecution
 from app.models.asset_group import AssetGroup
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
-from app.schemas.investment_feed import InvestmentFeed
+from app.schemas.investment_feed import InvestmentFeed, InvestmentProduct
 from app.services.asset_group_service import ensure_group_for_connection
 
 GROUP_NAMES = {
     "pension": "Pension", "keren_hishtalmut": "Keren Hishtalmut",
     "provident_fund": "Provident Fund", "investment": "Investments",
 }
+
+
+def masked_product_number(product: InvestmentProduct) -> str | None:
+    if product.provider == "hapoalim":
+        match = re.fullmatch(r"[0-9]+-[0-9]+-([0-9]+):securities", product.providerProductId)
+        return match.group(1)[-4:] if match else None
+    return product.providerProductId[-4:]
 
 
 def _utc(value: datetime) -> datetime:
@@ -136,6 +145,7 @@ async def sync_feed(session: AsyncSession, connection: BankConnection, feed: Inv
             value.date = incoming.asOf or incoming.observedAt.date()
             value.source_as_of_verified = incoming.asOf is not None
             value.observed_at = incoming.observedAt
+            value.source_provenance = incoming.provenance.model_dump(mode="json") if incoming.provenance else None
 
         # Once the source supplies a real date, an older undated observation
         # must not outrank that authoritative value simply because its date
@@ -171,7 +181,7 @@ async def sync_feed(session: AsyncSession, connection: BankConnection, feed: Inv
         asset.external_metadata = {
             "current_valuation_id": current_id,
             "investment_details": details,
-            "masked_number": product.providerProductId[-4:],
+            "masked_number": masked_product_number(product),
         }
 
         activity_rows = list((await session.scalars(select(AssetActivity).where(
@@ -197,6 +207,25 @@ async def sync_feed(session: AsyncSession, connection: BankConnection, feed: Inv
             row.currency = incoming.currency
             row.description = incoming.description
             row.observed_at = incoming.observedAt
+        executions = list((await session.scalars(select(AssetExecution).where(
+            AssetExecution.asset_id == asset.id, AssetExecution.workspace_id == connection.workspace_id,
+        ))).all())
+        by_execution_id = {row.external_id: row for row in executions}
+        for incoming_execution in feed.executions:
+            if incoming_execution.productId != product.id:
+                continue
+            execution = by_execution_id.get(incoming_execution.id)
+            if execution is not None and _utc(execution.observed_at) > _utc(incoming_execution.observedAt):
+                continue
+            if execution is None:
+                execution = AssetExecution(
+                    asset_id=asset.id, workspace_id=connection.workspace_id, external_id=incoming_execution.id,
+                )
+                session.add(execution)
+            execution.trade_date = incoming_execution.tradeDate
+            execution.kind = incoming_execution.kind
+            execution.observed_at = incoming_execution.observedAt
+            execution.data = incoming_execution.model_dump(mode="json")
     await session.flush()
 
 
@@ -230,7 +259,7 @@ async def enrich_account_identifiers(
             continue
         if (details.get("source") or {}).get("provider") != product.provider:
             raise ValueError("Investment account provider does not match its feed")
-        masked_number = product.providerProductId[-4:]
+        masked_number = masked_product_number(product)
         if metadata.get("masked_number") != masked_number:
             metadata["masked_number"] = masked_number
             asset.external_metadata = metadata

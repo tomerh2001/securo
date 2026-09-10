@@ -20,7 +20,7 @@ KNOWN_PROVIDERS = [
     {
         "name": "investment_feed",
         "display_name": "Investment collector",
-        "description": "Clal and Hachshara Best Invest through your investment collector",
+        "description": "Clal, Hachshara Best Invest and Hapoalim investments through your investment collector",
         "flow_type": "token",
         "requires_institution_select": False,
         "supports_asset_sync": True,
@@ -87,7 +87,10 @@ def _auto_register_providers() -> None:
     """Auto-register providers when credentials are configured."""
     from app.core.config import get_settings
     settings = get_settings()
-    if settings.investment_feed_enabled and (settings.investment_feed_url or settings.best_invest_feed_url):
+    if settings.investment_feed_enabled and (
+        settings.investment_feed_url or settings.best_invest_feed_url
+        or settings.hapoalim_investment_feed_url
+    ):
         from app.providers.investment_feed import InvestmentFeedProvider
         register_provider("investment_feed", InvestmentFeedProvider)
 

@@ -3,8 +3,8 @@ from datetime import date as _date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Numeric, String, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, JSON, Numeric, String, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -38,5 +38,8 @@ class AssetValue(Base):
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     source_as_of_verified: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
     observed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_provenance: Mapped[Optional[dict]] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=True,
+    )
 
     asset: Mapped["Asset"] = relationship(back_populates="values")

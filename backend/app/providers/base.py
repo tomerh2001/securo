@@ -288,6 +288,10 @@ class BankProvider(ABC):
         """Whether this integration offers explicit institution collection controls."""
         return False
 
+    def source_refresh_available(self, credentials: dict) -> bool:
+        """Whether this connection can expose an explicit collection action."""
+        return self.supports_source_refresh
+
     async def get_source_status(self, credentials: dict) -> CollectorControlStatus:
         raise SourceControlError("source_controls_unsupported", status_code=400)
 

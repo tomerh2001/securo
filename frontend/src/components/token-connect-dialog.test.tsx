@@ -65,4 +65,37 @@ describe('Investment token connection', () => {
     expect(screen.getByRole('button', { name: 'Connect' })).toBeDisabled()
   })
 
+  it.each([
+    { connectionId: undefined, button: 'Connect', title: 'Connect Hapoalim Investments' },
+    { connectionId: 'hapoalim-connection', button: 'Reconnect', title: 'Reconnect Hapoalim Investments' },
+  ])('preserves the Hapoalim source prefix for $button', async ({ connectionId, button, title }) => {
+    const onClose = vi.fn()
+    const { user } = renderWithProviders(
+      <TokenConnectDialog open onClose={onClose} provider="investment_feed" supportsAssetSync reconnectConnectionId={connectionId} />,
+    )
+    const token = 'hapoalim.example.collector_token'
+    await user.type(screen.getByLabelText('Connection token'), token)
+    expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
+    expect(screen.getByText('Keep the hapoalim. prefix. Use a separate connection for your other investment providers.')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: button }))
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
+    expect(connections.handleCallback).toHaveBeenCalledWith(
+      token, 'investment_feed', undefined,
+      connectionId ? undefined : { sync_assets: true }, connectionId,
+    )
+  })
+
+  it('updates source wording when switching between Hapoalim and another collector', async () => {
+    const { user } = renderWithProviders(<TokenConnectDialog open onClose={vi.fn()} provider="investment_feed" />)
+    const input = screen.getByLabelText('Connection token')
+    await user.type(input, 'hapoalim.example-token')
+    expect(screen.getByRole('heading', { name: 'Connect Hapoalim Investments' })).toBeInTheDocument()
+    await user.clear(input)
+    await user.type(input, 'best-invest.example-token')
+    expect(screen.getByRole('heading', { name: 'Connect Hachshara Best Invest' })).toBeInTheDocument()
+    await user.clear(input)
+    expect(screen.getByRole('heading', { name: 'Connect investment accounts' })).toBeInTheDocument()
+  })
+
 })

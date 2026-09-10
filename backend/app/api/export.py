@@ -13,6 +13,7 @@ from app.models.account import Account
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
 from app.models.asset_activity import AssetActivity
+from app.models.asset_execution import AssetExecution
 from app.models.budget import Budget
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
@@ -54,6 +55,7 @@ async def _collect(ctx: WorkspaceContext, session: AsyncSession) -> dict[str, ob
     budgets = (await session.execute(select(Budget).where(Budget.workspace_id == ws_id))).scalars().all()
     assets = (await session.execute(select(Asset).where(Asset.workspace_id == ws_id))).scalars().all()
     asset_activities = (await session.execute(select(AssetActivity).where(AssetActivity.workspace_id == ws_id))).scalars().all()
+    asset_executions = (await session.execute(select(AssetExecution).where(AssetExecution.workspace_id == ws_id))).scalars().all()
     import_logs = (await session.execute(select(ImportLog).where(ImportLog.workspace_id == ws_id))).scalars().all()
 
     asset_ids = [a.id for a in assets]
@@ -73,6 +75,7 @@ async def _collect(ctx: WorkspaceContext, session: AsyncSession) -> dict[str, ob
         "assets": assets,
         "asset_values": asset_values,
         "asset_activities": asset_activities,
+        "asset_executions": asset_executions,
         "import_logs": import_logs,
     }
 

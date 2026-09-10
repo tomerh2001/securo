@@ -56,7 +56,7 @@ export default function ConnectionDetailPage() {
   const total = investmentAccountTotal(investments, currency)
   const sourceState = investmentSourceState(allInvestments)
   const provider = providers?.find(item => item.name === connection?.provider)
-  const sourceRefresh = provider?.supports_source_refresh ?? false
+  const sourceRefresh = connection?.source_refresh_available ?? provider?.supports_source_refresh ?? false
   const needsReconnect = !!connection && !['active', 'syncing'].includes(connection.status)
   const changeTab = (value: string) => navigate({ pathname: location.pathname, hash: value === 'health' ? '#connection-health' : '' }, { replace: true })
   const reconnect = async () => {
@@ -157,7 +157,11 @@ export default function ConnectionDetailPage() {
             <h2 className="font-semibold">{t(needsReconnect ? 'connectionHealth.signInTitle' : 'connectionHealth.savedDataTitle')}</h2>
             <p className="text-sm text-muted-foreground">{t(needsReconnect ? 'connectionHealth.reconnectHelp' : 'connectionHealth.savedDataHelp')}</p>
             <p className="text-sm"><span className="text-muted-foreground">{t('connectionHealth.inSecuro')}: </span>{connection.last_sync_at ? new Date(connection.last_sync_at).toLocaleString(locale) : t('connectionHealth.notYet')}</p>
-            {allInvestments.length > 0 && <p className="text-sm text-muted-foreground">{t('connectionHealth.unavailableHelp')}</p>}
+            {allInvestments[0]?.provider === 'hapoalim' ? <div className="space-y-2 text-sm">
+              <p className="text-muted-foreground">{t('connectionHealth.hapoalimCachedHelp')}</p>
+              <p><span className="text-muted-foreground">{t('connectionHealth.lastSuccess')}: </span>{allInvestments[0].details.source.lastSuccessAt ? new Date(allInvestments[0].details.source.lastSuccessAt).toLocaleString(locale) : t('connectionHealth.notYet')}</p>
+              <p><span className="text-muted-foreground">{t('connectionHealth.lastAttempt')}: </span>{allInvestments[0].details.source.lastAttemptAt ? new Date(allInvestments[0].details.source.lastAttemptAt).toLocaleString(locale) : t('connectionHealth.notYet')}</p>
+            </div> : allInvestments.length > 0 && <p className="text-sm text-muted-foreground">{t('connectionHealth.unavailableHelp')}</p>}
             {canWrite && <Button variant="outline" onClick={() => needsReconnect ? reconnect() : refresh.mutate()} disabled={refresh.isPending || connection.status === 'syncing'}>
               <RefreshCw size={14} className={refresh.isPending ? 'animate-spin' : ''} />{t(needsReconnect ? 'accounts.reconnect' : 'connectionHealth.importSaved')}
             </Button>}
