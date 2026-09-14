@@ -20,6 +20,7 @@ export function invalidateFinancialQueries(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ['transactions'] })
   queryClient.invalidateQueries({ queryKey: ['dashboard'] })
   queryClient.invalidateQueries({ queryKey: ['accounts'] })
+  queryClient.invalidateQueries({ queryKey: ['account-history-coverage'] })
   queryClient.invalidateQueries({ queryKey: ['budgets'] })
   queryClient.invalidateQueries({ queryKey: ['reports'] })
   queryClient.invalidateQueries({ queryKey: ['drill-down'] })

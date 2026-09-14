@@ -1,14 +1,13 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, CircleAlert, RefreshCw, Settings } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { ChevronRight, CircleAlert, Settings } from 'lucide-react'
 import { toast } from 'sonner'
 import { accounts, connections, investmentAccounts } from '@/lib/api'
 import { getAccountName, formatAccountMask } from '@/lib/account-utils'
 import { getConnectionName } from '@/lib/connection-utils'
 import { filterInvestmentAccounts, investmentAccountTotal, investmentSourceState } from '@/lib/investment-account-utils'
-import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { formatCurrency } from '@/lib/format'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -21,6 +20,7 @@ import { ConnectionSettingsDialog } from '@/components/connection-settings-dialo
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { AccountWorkspace, AccountWorkspaceHeader } from '@/components/account-workspace'
 import { ConnectionHealth } from '@/components/connection-health'
 import { TokenConnectDialog } from '@/components/token-connect-dialog'
 import { BankConnectDialog } from '@/components/bank-connect-dialog'
@@ -38,7 +38,6 @@ export default function ConnectionDetailPage() {
   const { mask } = usePrivacyMode()
   const locale = useDisplayLocale()
   const currency = user?.preferences?.currency_display ?? 'USD'
-  const queryClient = useQueryClient()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const connectionQuery = useQuery({ queryKey: ['connections'], queryFn: connections.list })
   const bankQuery = useQuery({ queryKey: ['accounts'], queryFn: () => accounts.list() })
@@ -65,19 +64,6 @@ export default function ConnectionDetailPage() {
       try { window.location.assign(await connections.getReauthUrl(connection.id)) } catch { toast.error(t('accounts.connectError')) }
     } else setReconnectOpen(true)
   }
-  const refresh = useMutation({
-    mutationFn: () => connections.sync(id!),
-    onSuccess: () => {
-      invalidateFinancialQueries(queryClient)
-      queryClient.invalidateQueries({ queryKey: ['connections'] })
-      toast.success(t(sourceRefresh ? 'connectionHealth.savedImported' : 'accounts.syncDone'))
-    },
-    onError: () => {
-      invalidateFinancialQueries(queryClient)
-      queryClient.invalidateQueries({ queryKey: ['connections'] })
-      toast.error(t('common.error'))
-    },
-  })
   const retry = () => {
     connectionQuery.refetch()
     bankQuery.refetch()
@@ -100,22 +86,13 @@ export default function ConnectionDetailPage() {
   const attention = sourceState !== 'current' || needsReconnect
   const stateKey = { signInRequired: 'statusSignInRequired', unavailable: 'statusUnavailable', neverSynced: 'statusNeverSynced', partial: 'statusPartial', stale: 'statusStale', current: '' }[sourceState]
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <nav aria-label={t('investmentAccounts.breadcrumb', { defaultValue: 'Breadcrumb' })} className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link to="/accounts" className="hover:text-foreground">{t('accounts.title')}</Link><ChevronRight size={14} /><span className="truncate" dir="auto">{name}</span>
-      </nav>
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <ConnectionLogo logoUrl={connection.institutions?.length > 1 ? null : connection.logo_url} className="h-11 w-11" />
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight break-words" dir="auto">{name}</h1>
-            {!loading && !failed && <p className="mt-1 text-sm text-muted-foreground">{t('investmentAccounts.accountCount', { count, defaultValue: '{{count}} accounts' })}</p>}
-          </div>
-        </div>
-        {canWrite && <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={() => setSettingsOpen(true)} aria-label={t('connections.settings')}><Settings size={17} /></Button>
-        </div>}
-      </header>
+    <AccountWorkspace>
+      <AccountWorkspaceHeader title={name}
+        breadcrumbs={[{ label: t('accounts.title'), to: '/accounts' }, { label: name }]}
+        icon={<ConnectionLogo logoUrl={connection.institutions?.length > 1 ? null : connection.logo_url} className="h-11 w-11" />}
+        subtitle={!loading && !failed ? t('investmentAccounts.accountCount', { count }) : undefined}
+        actions={canWrite && <Button variant="outline" onClick={() => setSettingsOpen(true)}><Settings size={16} />{t('connections.settings')}</Button>}
+      />
 
       <Tabs value={healthTab ? 'health' : 'accounts'} onValueChange={changeTab} className="gap-5">
         <TabsList variant="line" aria-label={t('connectionHealth.sections')}>
@@ -146,26 +123,14 @@ export default function ConnectionDetailPage() {
           <h2 className="border-b border-border px-5 py-4 text-sm font-semibold">{t('investmentAccounts.bankAccounts', { defaultValue: 'Bank accounts and cards' })}</h2>
           <div className="divide-y divide-border">{bankAccounts.map(account => <Link key={account.id} to={`/accounts/${account.id}`} className="flex items-center gap-3 px-4 py-4 hover:bg-muted/40 sm:px-5">
             <AccountIcon account={account} /><div className="min-w-0 flex-1"><p className="break-words text-sm font-medium" dir="auto">{getAccountName(account)}</p><p className="mt-1 text-xs text-muted-foreground">{t(getAccountTypeConfig(account.type).label)}{account.masked_number && <span dir="ltr"> · {mask(formatAccountMask(account)!)}</span>}</p></div>
-            <span className="shrink-0 text-sm font-semibold tabular-nums">{mask(formatCurrency(Number(account.current_balance), account.currency, locale))}</span><ChevronRight size={15} className="hidden text-muted-foreground sm:block" />
+            <div className="shrink-0 text-right"><span className="text-sm font-semibold tabular-nums">{mask(formatCurrency(Number(account.current_balance), account.currency, locale))}</span>{account.type === 'credit_card' && <p className="mt-1 text-[10px] text-muted-foreground">{t(account.balance_semantics === 'next_statement_debit' ? 'accountWorkspace.nextStatementDebit' : 'accountWorkspace.issuerReportedAmount')}</p>}</div><ChevronRight size={15} className="hidden text-muted-foreground sm:block" />
           </Link>)}</div>
         </section>}
         {count === 0 && !failed && <p className="rounded-xl border border-border p-8 text-center text-sm text-muted-foreground">{t('investmentAccounts.noAccountsInView', { defaultValue: 'No accounts in this view.' })}</p>}
       </>}
         </TabsContent>
         <TabsContent value="health" id="connection-health" className="space-y-5">
-          {sourceRefresh ? <ConnectionHealth key={connection.id} connection={connection} onReconnect={reconnect} /> : <section className="rounded-xl border border-border bg-card p-5 space-y-4">
-            <h2 className="font-semibold">{t(needsReconnect ? 'connectionHealth.signInTitle' : 'connectionHealth.savedDataTitle')}</h2>
-            <p className="text-sm text-muted-foreground">{t(needsReconnect ? 'connectionHealth.reconnectHelp' : 'connectionHealth.savedDataHelp')}</p>
-            <p className="text-sm"><span className="text-muted-foreground">{t('connectionHealth.inSecuro')}: </span>{connection.last_sync_at ? new Date(connection.last_sync_at).toLocaleString(locale) : t('connectionHealth.notYet')}</p>
-            {allInvestments[0]?.provider === 'hapoalim' ? <div className="space-y-2 text-sm">
-              <p className="text-muted-foreground">{t('connectionHealth.hapoalimCachedHelp')}</p>
-              <p><span className="text-muted-foreground">{t('connectionHealth.lastSuccess')}: </span>{allInvestments[0].details.source.lastSuccessAt ? new Date(allInvestments[0].details.source.lastSuccessAt).toLocaleString(locale) : t('connectionHealth.notYet')}</p>
-              <p><span className="text-muted-foreground">{t('connectionHealth.lastAttempt')}: </span>{allInvestments[0].details.source.lastAttemptAt ? new Date(allInvestments[0].details.source.lastAttemptAt).toLocaleString(locale) : t('connectionHealth.notYet')}</p>
-            </div> : allInvestments.length > 0 && <p className="text-sm text-muted-foreground">{t('connectionHealth.unavailableHelp')}</p>}
-            {canWrite && <Button variant="outline" onClick={() => needsReconnect ? reconnect() : refresh.mutate()} disabled={refresh.isPending || connection.status === 'syncing'}>
-              <RefreshCw size={14} className={refresh.isPending ? 'animate-spin' : ''} />{t(needsReconnect ? 'accounts.reconnect' : 'connectionHealth.importSaved')}
-            </Button>}
-          </section>}
+          <ConnectionHealth key={connection.id} connection={connection} onReconnect={reconnect} supportsSourceRefresh={sourceRefresh} />
         </TabsContent>
       </Tabs>
       {reconnectOpen && provider?.flow_type === 'token' && <TokenConnectDialog open onClose={() => setReconnectOpen(false)} provider={provider.name} supportsAssetSync={provider.supports_asset_sync} reconnectConnectionId={connection.id} />}
@@ -173,6 +138,6 @@ export default function ConnectionDetailPage() {
       <ConnectionSettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} connection={connection}
         supportsAssetSync={providers?.find(provider => provider.name === connection.provider)?.supports_asset_sync ?? false}
         supportsTransactionSettings={allBankAccounts.length > 0 || (connection.provider !== 'investment_feed' && allInvestments.length === 0)} />
-    </div>
+    </AccountWorkspace>
   )
 }

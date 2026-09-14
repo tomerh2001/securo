@@ -201,7 +201,7 @@ describe('investment accounts in Accounts', () => {
     expect(recovery).toHaveAttribute('href', '/connections/clal-connection#connection-health')
     expect(screen.queryByText('Needs attention')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: `${t('common.more')}: Clal` }))
-    expect(screen.getByRole('menuitem', { name: 'Fix connection' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Manage connection' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: t('accounts.sync') })).not.toBeInTheDocument()
   })
 

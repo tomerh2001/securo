@@ -8,7 +8,7 @@ import type { AssetActivity, InvestmentAccount } from '@/types'
 const modules = vi.hoisted(() => ({ accounts: true }))
 vi.mock('@/contexts/workspace-context', () => ({ useWorkspace: () => ({ hasModule: (module: string) => module !== 'accounts' || modules.accounts }) }))
 
-vi.mock('@/lib/api', () => ({ assets: { values: vi.fn() }, investmentAccounts: { get: vi.fn(), activities: vi.fn(), executions: vi.fn() } }))
+vi.mock('@/lib/api', () => ({ assets: { values: vi.fn() }, investmentAccounts: { get: vi.fn(), activities: vi.fn(), executions: vi.fn(), historyCoverage: vi.fn() } }))
 vi.mock('@/hooks/use-display-locale', () => ({ useDisplayLocale: () => 'en-US', useDateLocale: () => 'en-US' }))
 vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ user: { preferences: { currency_display: 'ILS' } } }) }))
 vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => false }))
@@ -33,6 +33,7 @@ const rows: AssetActivity[] = Array.from({ length: 6 }, (_, index) => ({
 beforeEach(() => {
   vi.clearAllMocks()
   modules.accounts = true
+  vi.mocked(investmentAccounts.historyCoverage).mockResolvedValue({ account_id: account.id, account_kind: 'investment', balance_as_of: '2026-08-31', opening_balance_date: null, streams: [], note_codes: [] })
   vi.mocked(investmentAccounts.get).mockResolvedValue(account)
   vi.mocked(investmentAccounts.activities).mockResolvedValue({ items: rows, total: rows.length, page: 1, limit: 5, available_years: [2026], available_kinds: ['employee_contribution'] })
   vi.mocked(investmentAccounts.executions).mockResolvedValue({ items: [], total: 0, page: 1, limit: 25, available_years: [], available_kinds: [] })
@@ -53,7 +54,7 @@ describe('InvestmentAccountDetailPage', () => {
     expect(screen.queryByText('Contribution 6')).not.toBeInTheDocument()
     expect(investmentAccounts.activities).toHaveBeenCalledWith('pension-one', { page: 1, limit: 5 })
     expect(screen.queryByText('Annual summary')).not.toBeInTheDocument()
-    expect(screen.getByText(account.name)).not.toBeVisible()
+    expect(screen.getAllByText(account.name).some(element => element.closest('header'))).toBe(true)
     expect(screen.queryByRole('img', { name: 'Recorded account balances over time' })).not.toBeInTheDocument()
   })
 
@@ -100,7 +101,7 @@ describe('InvestmentAccountDetailPage', () => {
     renderWithProviders(<InvestmentAccountDetailPage />, options)
     const notice = await screen.findByRole('status')
     expect(notice).toHaveTextContent('Sign-in verification is required to update these accounts. Your saved balances are still available.')
-    expect(within(notice).getByRole('link', { name: 'Fix connection' })).toHaveAttribute('href', '/connections/connection-one#connection-health')
+    expect(within(notice).getByRole('link', { name: 'View connection' })).toHaveAttribute('href', '/connections/connection-one#connection-health')
     expect(screen.getByText('Balance date unavailable')).toBeInTheDocument()
     expect(screen.queryByText(/As of|Clal|last successful collection/i)).not.toBeInTheDocument()
   })
@@ -125,7 +126,7 @@ describe('InvestmentAccountDetailPage', () => {
     expect(await screen.findByRole('link', { name: 'Assets' })).toHaveAttribute('href', '/assets')
     expect(screen.getByText('Example provider')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Example provider' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Fix connection' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'View connection' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Accounts' })).not.toBeInTheDocument()
   })
 

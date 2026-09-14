@@ -1,18 +1,14 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
-import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { CollectionSelector } from '@/components/collection-selector'
 import { auth as authApi, admin as adminApi } from '@/lib/api'
 import { resolveSupportedLang } from '@/lib/i18n'
 import { OnboardingTour } from '@/components/onboarding-tour'
 import { useTheme } from 'next-themes'
-import { accounts as accountsApi, connections as connectionsApi, investmentAccounts as investmentAccountsApi } from '@/lib/api'
-import { filterInvestmentAccounts } from '@/lib/investment-account-utils'
-import { AccountNavigationLinks } from '@/components/account-navigation-links'
+import { PrimaryNavLink } from '@/components/primary-nav-link'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -85,7 +81,6 @@ function NavSkeleton() {
 export function AppLayout() {
   const { t } = useTranslation()
   const { user, logout, updateUser } = useAuth()
-  const { activeAccountIds, activeWalletIds } = useCollectionFilter()
   const { theme, setTheme, resolvedTheme } = useTheme()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -172,29 +167,6 @@ export function AppLayout() {
       window.matchMedia?.('(prefers-color-scheme: dark)').matches
   const toggleTheme = () => setTheme(isDark ? 'light' : 'dark')
 
-  const { data: accountsList } = useQuery({
-    queryKey: ['accounts'],
-    queryFn: () => accountsApi.list(),
-    enabled: hasModule('accounts'),
-  })
-
-  const { data: investmentAccountsList } = useQuery({
-    queryKey: ['investment-accounts'],
-    queryFn: () => investmentAccountsApi.list(),
-    enabled: hasModule('assets') && hasModule('accounts'),
-  })
-  const { data: connectionsList } = useQuery({
-    queryKey: ['connections'],
-    queryFn: connectionsApi.list,
-    enabled: hasModule('accounts'),
-  })
-  const visibleInvestments = filterInvestmentAccounts(hasModule('assets') ? investmentAccountsList ?? [] : [], activeWalletIds)
-  const visibleAccounts = (accountsList ?? []).filter(account => !account.is_closed
-    && (activeAccountIds === null || activeAccountIds.includes(account.id)))
-  const collectionIsActive = activeAccountIds !== null || activeWalletIds !== null
-  const visibleConnections = (connectionsList ?? []).filter(connection => !collectionIsActive
-    || visibleAccounts.some(account => account.connection_id === connection.id)
-    || visibleInvestments.some(account => account.connection_id === connection.id))
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
 
   return (
@@ -385,39 +357,7 @@ export function AppLayout() {
                 )
               }
 
-              const isActive =
-                item.path === '/'
-                  ? location.pathname === '/'
-                  : location.pathname.startsWith(item.path) || (item.path === '/accounts' && location.pathname.startsWith('/connections/'))
-              const Icon = item.icon
-              return (
-                <div key={item.key}>
-                <Link
-                  to={item.path}
-                  data-tour={`nav-${item.key}`}
-                  onClick={() => setSidebarOpen(false)}
-                  className={cn(
-                    'flex items-center gap-3 text-[13px] font-medium transition-all rounded-lg px-3 py-2',
-                    isActive
-                      ? 'bg-primary/[0.08] text-primary border-l-[3px] border-primary pl-[9px]'
-                      : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground',
-                  )}
-                >
-                  <Icon
-                    size={17}
-                    className={cn(
-                      'shrink-0',
-                      isActive ? 'text-primary' : 'text-sidebar-muted',
-                    )}
-                  />
-                  <span>{t(`nav.${item.key}`)}</span>
-                </Link>
-                {item.path === '/accounts' && <AccountNavigationLinks
-                  accounts={visibleAccounts} investments={visibleInvestments} connections={visibleConnections}
-                  pathname={location.pathname} hash={location.hash} onNavigate={() => setSidebarOpen(false)}
-                />}
-                </div>
-              )
+              return <PrimaryNavLink key={item.key} item={item} pathname={location.pathname} onNavigate={() => setSidebarOpen(false)} />
             })}
           </nav>
           </div>

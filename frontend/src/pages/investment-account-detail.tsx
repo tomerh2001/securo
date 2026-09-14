@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, ChevronDown, ChevronRight, Info } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { assets, investmentAccounts } from '@/lib/api'
 import { formatCurrency } from '@/lib/format'
@@ -12,7 +12,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent } from '@/components/ui/tabs'
 import {
   InvestmentActivityHistory,
   InvestmentActivityList,
@@ -20,6 +20,8 @@ import {
   InvestmentReports,
 } from '@/components/investment-details'
 import type { InvestmentAccount } from '@/types'
+import { AccountWorkspace, AccountWorkspaceHeader, AccountSectionTabs, AccountConnectionPanel, AccountDataStatus, AccountBalanceSummary } from '@/components/account-workspace'
+import { AccountHistory } from '@/components/account-history'
 import { InvestmentExecutionHistory } from '@/components/investment-executions'
 
 function AccountOverview({ account, onActivity }: { account: InvestmentAccount; onActivity: () => void }) {
@@ -131,7 +133,7 @@ export default function InvestmentAccountDetailPage() {
     enabled: !!id,
   })
   const hasExecutions = account?.provider === 'hapoalim' || (account?.details.coverage.executions != null && account.details.coverage.executions !== 'unavailable')
-  const availableTabs = ['activity', 'reports', ...(hasExecutions ? ['executions'] : [])]
+  const availableTabs = ['activity', 'reports', 'history', 'connection', ...(hasExecutions ? ['executions'] : [])]
   const tab = availableTabs.includes(searchParams.get('tab') ?? '') ? searchParams.get('tab')! : 'overview'
   function changeTab(value: string) {
     const next = new URLSearchParams(searchParams)
@@ -161,39 +163,32 @@ export default function InvestmentAccountDetailPage() {
     current: '',
   }[sourceState]
   return (
-    <div className="max-w-5xl space-y-6">
-      <nav aria-label={t('investmentAccounts.breadcrumb', { defaultValue: 'Breadcrumb' })} className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-        <Link to={accountsEnabled ? '/accounts' : '/assets'} className="hover:text-foreground hover:underline">{t(accountsEnabled ? 'accounts.title' : 'assets.title')}</Link>
-        {account.connection_id && <><ChevronRight size={14} aria-hidden="true" />{accountsEnabled ? <Link to={`/connections/${account.connection_id}`} className="hover:text-foreground hover:underline" dir="auto">{account.institution_name || account.provider}</Link> : <span dir="auto">{account.institution_name || account.provider}</span>}</>}
-        <ChevronRight size={14} aria-hidden="true" /><span className="text-foreground" aria-current="page">{t(`investments.productKinds.${account.product_kind}`, t('investments.productKinds.investment'))}</span>
-      </nav>
-      <header>
-        <h1 className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-2xl font-semibold tracking-tight">{t(`investments.productKinds.${account.product_kind}`, t('investments.productKinds.investment'))}{account.masked_number && <span className="text-base font-normal text-muted-foreground tabular-nums">{mask(`••${account.masked_number}`)}</span>}</h1>
-      </header>
-      {needsAttention && <div role="status" className="flex items-start gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 p-4 text-sm">
-        <Info size={16} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
-        <div className="space-y-1"><p>{notice}</p>{accountsEnabled && account.connection_id && <Link className="inline-block text-xs text-muted-foreground hover:text-foreground underline underline-offset-4" to={`/connections/${account.connection_id}#connection-health`}>{t('connectionHealth.fixConnection', { defaultValue: 'Fix connection' })}</Link>}</div>
-      </div>}
-      <section className="rounded-xl border border-border bg-card p-5 sm:p-6" aria-label={t('investmentAccounts.currentBalance', { defaultValue: 'Current balance' })}>
-        <p className="text-sm text-muted-foreground">{t('investmentAccounts.currentBalance', { defaultValue: 'Current balance' })}</p>
-        <p className="mt-2 text-3xl sm:text-4xl font-semibold tracking-tight tabular-nums break-words">{account.balance != null ? mask(formatCurrency(account.balance, account.currency, locale)) : '—'}</p>
-        {account.balance_primary != null && account.currency !== userCurrency && <p className="mt-1 text-sm text-muted-foreground tabular-nums">{mask(formatCurrency(account.balance_primary, userCurrency, locale))}</p>}
-        <p className="mt-3 text-xs text-muted-foreground">{details.valuation_date
-          ? t('investments.forecastAsOf', { date: formatInvestmentDate(details.valuation_date, dateLocale) })
-          : t('investmentAccounts.balanceDateUnknown', { defaultValue: 'Balance date unavailable' })}</p>
-      </section>
+    <AccountWorkspace>
+      <AccountWorkspaceHeader
+        title={<>{t(`investments.productKinds.${account.product_kind}`, t('investments.productKinds.investment'))}{account.masked_number && <span className="ml-3 text-base font-normal text-muted-foreground tabular-nums">{mask(`••${account.masked_number}`)}</span>}</>}
+        subtitle={<span dir="auto">{account.name}</span>}
+        breadcrumbs={[
+          { label: t(accountsEnabled ? 'accounts.title' : 'assets.title'), to: accountsEnabled ? '/accounts' : '/assets' },
+          ...(account.connection_id ? [{ label: account.institution_name || account.provider, ...(accountsEnabled ? { to: `/connections/${account.connection_id}` } : {}) }] : []),
+          { label: t(`investments.productKinds.${account.product_kind}`, t('investments.productKinds.investment')) },
+        ]}
+        actions={accountsEnabled && account.connection_id && <Button variant="outline" onClick={() => changeTab('connection')}>{t('accountWorkspace.connectionStatus')}</Button>}
+      />
+      <AccountDataStatus attention={needsAttention} connectionId={accountsEnabled ? account.connection_id : null} message={notice || t('connectionHealth.currentHelp')} />
+      <AccountBalanceSummary label={t('investmentAccounts.currentBalance')}
+        amount={account.balance != null ? mask(formatCurrency(account.balance, account.currency, locale)) : '—'}
+        secondary={account.balance_primary != null && account.currency !== userCurrency ? mask(formatCurrency(account.balance_primary, userCurrency, locale)) : undefined}
+        date={details.valuation_date ? t('investments.forecastAsOf', { date: formatInvestmentDate(details.valuation_date, dateLocale) }) : t('investmentAccounts.balanceDateUnknown')}
+      />
       <Tabs value={tab} onValueChange={changeTab} className="gap-5">
-        <TabsList variant="line" aria-label={t('investmentAccounts.accountSections', { defaultValue: 'Account sections' })}>
-          <TabsTrigger value="overview">{t('investmentAccounts.overview', { defaultValue: 'Overview' })}</TabsTrigger>
-          <TabsTrigger value="activity">{t('investmentAccounts.activity', { defaultValue: 'Activity' })}</TabsTrigger>
-          {hasExecutions && <TabsTrigger value="executions">{t('investmentExecutions.title')}</TabsTrigger>}
-          <TabsTrigger value="reports">{t('investmentAccounts.reports', { defaultValue: 'Reports' })}</TabsTrigger>
-        </TabsList>
-        <TabsContent value="overview"><AccountOverview account={account} onActivity={() => changeTab('activity')} /></TabsContent>
+        <AccountSectionTabs reports executions={hasExecutions} />
+        <TabsContent value="overview" className="space-y-6"><AccountHistory accountId={account.id} kind="investment" compact onOpen={() => changeTab('history')} /><AccountOverview account={account} onActivity={() => changeTab('activity')} /></TabsContent>
+        <TabsContent value="history"><AccountHistory accountId={account.id} kind="investment" /></TabsContent>
+        <TabsContent value="connection"><AccountConnectionPanel connectionId={accountsEnabled ? account.connection_id : null} institution={account.institution_name} /></TabsContent>
         <TabsContent value="activity"><InvestmentActivityHistory key={account.id} accountId={account.id} /></TabsContent>
         {hasExecutions && <TabsContent value="executions"><InvestmentExecutionHistory key={account.id} accountId={account.id} /></TabsContent>}
         <TabsContent value="reports"><InvestmentReports reports={details.report_summaries ?? []} currency={account.currency} /></TabsContent>
       </Tabs>
-    </div>
+    </AccountWorkspace>
   )
 }
