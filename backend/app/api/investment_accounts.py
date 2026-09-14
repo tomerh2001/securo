@@ -9,9 +9,20 @@ from app.schemas.investment_account import (
     InvestmentAccountActivitiesRead, InvestmentAccountExecutionsRead, InvestmentAccountRead,
 )
 from app.schemas.investment_feed import ActivityKind, ExecutionKind
+from app.schemas.account_history import AccountHistoryCoverage
 from app.services import investment_account_service
+from app.services import account_history_service
 
 router = APIRouter(prefix="/api/investment-accounts", tags=["investment accounts"])
+
+
+@router.get("/{asset_id}/history-coverage", response_model=AccountHistoryCoverage)
+async def get_history_coverage(
+    asset_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    return await account_history_service.investment_history(session, ctx.workspace.id, asset_id)
 
 
 @router.get("", response_model=list[InvestmentAccountRead])

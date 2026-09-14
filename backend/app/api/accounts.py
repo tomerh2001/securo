@@ -20,9 +20,20 @@ from app.schemas.account import (
     CreditCardBillRead,
 )
 from app.services import account_service
+from app.schemas.account_history import AccountHistoryCoverage
+from app.services import account_history_service
 from app.services.fx_rate_service import convert
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
+
+
+@router.get("/{account_id}/history-coverage", response_model=AccountHistoryCoverage)
+async def get_history_coverage(
+    account_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    return await account_history_service.bank_history(session, ctx.workspace.id, account_id)
 
 
 @router.get("", response_model=list[AccountRead])

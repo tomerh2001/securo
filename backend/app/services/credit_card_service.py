@@ -66,6 +66,24 @@ def compute_available_credit(
     return credit_limit - utilized
 
 
+def _stored_provider_bill_date(transaction) -> Optional[date]:
+    """Use only adapter-normalized dates on synced transactions."""
+    if getattr(transaction, "source", None) != "sync":
+        return None
+    raw = getattr(transaction, "raw_data", None)
+    marker = raw.get("_securo_provider_dates") if isinstance(raw, dict) else None
+    if not isinstance(marker, dict) or marker.get("provider") != "simplefin":
+        return None
+    value = marker.get("bill_date")
+    if not isinstance(value, str) or len(value) != 10:
+        return None
+    try:
+        parsed = date.fromisoformat(value)
+        return parsed if parsed.isoformat() == value else None
+    except ValueError:
+        return None
+
+
 def apply_effective_date(transaction, account, *, bill_due_date: Optional[date] = None) -> None:
     """Populate `transaction.effective_date` based on the account type.
 
@@ -75,7 +93,8 @@ def apply_effective_date(transaction, account, *, bill_due_date: Optional[date] 
        disagree with (issue #92's LucasFidelis suggestion).
     2. `bill_due_date` — bank-truth from Pluggy /bills (passed in by the
        sync layer when a bill is linked).
-    3. Cycle math from `account.statement_close_day` / `payment_due_day`.
+    3. Adapter-normalized billing date saved with the source transaction.
+    4. Cycle math from `account.statement_close_day` / `payment_due_day`.
 
     For non-CC accounts, effective_date is always equal to `date`.
 
@@ -88,6 +107,7 @@ def apply_effective_date(transaction, account, *, bill_due_date: Optional[date] 
         transaction.effective_date = override
         return
     if account is not None and getattr(account, "type", None) == "credit_card":
+        bill_due_date = bill_due_date or _stored_provider_bill_date(transaction)
         if bill_due_date is not None:
             transaction.effective_date = bill_due_date
         else:

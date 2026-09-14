@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -56,6 +56,7 @@ class AccountRead(AccountBase):
     institution_name: Optional[str] = None
     institution_logo_url: Optional[str] = None
     current_balance: float = 0.0
+    balance_semantics: Optional[Literal["balance", "next_statement_debit"]] = None
     previous_balance: Optional[float] = None
     balance_primary: Optional[float] = None
     credit_limit: Optional[float] = None

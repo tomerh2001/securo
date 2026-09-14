@@ -91,6 +91,17 @@ def _epoch_to_date(value: Any) -> Optional[date]:
         return None
 
 
+def _calendar_date(value: Any) -> Optional[date]:
+    """Read a source calendar date without timezone conversion or guessed days."""
+    if not isinstance(value, str) or len(value) != 10:
+        return None
+    try:
+        parsed = date.fromisoformat(value)
+        return parsed if parsed.isoformat() == value else None
+    except ValueError:
+        return None
+
+
 def _accounts_url_and_auth(access_url: str) -> tuple[str, Optional[tuple[str, str]]]:
     parsed = urlsplit(access_url.rstrip("/"))
     if parsed.username is None:
@@ -422,6 +433,11 @@ class SimpleFinProvider(BankProvider):
             inst_ext, inst_name, inst_logo = SimpleFinProvider._account_institution_hint(
                 raw, by_conn_id
             )
+            extra_raw = raw.get("extra")
+            extra = extra_raw if isinstance(extra_raw, dict) else {}
+            semantics = extra.get("balance_semantics")
+            if semantics not in ("balance", "next_statement_debit"):
+                semantics = None
 
             accounts.append(
                 AccountData(
@@ -433,6 +449,7 @@ class SimpleFinProvider(BankProvider):
                     institution_external_id=inst_ext,
                     institution_name=inst_name,
                     institution_logo_url=inst_logo,
+                    balance_semantics=semantics,
                 )
             )
         return institution_name or "SimpleFIN Connection", accounts
@@ -492,9 +509,28 @@ class SimpleFinProvider(BankProvider):
         amount = amount_raw.copy_abs()
         posted = _epoch_to_date(raw.get("posted"))
         transacted = _epoch_to_date(raw.get("transacted_at"))
-        txn_date = posted or transacted
+        extra_raw = raw.get("extra")
+        extra = extra_raw if isinstance(extra_raw, dict) else {}
+        date_kind = extra.get("transaction_date_kind")
+        occurrence = (
+            _calendar_date(extra.get("transaction_date"))
+            if date_kind in ("purchase", "installment_occurrence", "archive_purchase_or_occurrence")
+            else None
+        )
+        txn_date = occurrence or posted or transacted
         if not txn_date:
             return None
+        bill_date = _calendar_date(extra.get("charge_date")) if occurrence else None
+        # Only this adapter creates the normalized marker. Never accept a
+        # caller-supplied marker, and retain the original provider fields.
+        raw_data = {key: value for key, value in raw.items() if key != "_securo_provider_dates"}
+        if occurrence:
+            raw_data["_securo_provider_dates"] = {
+                "provider": "simplefin",
+                "transaction_date": occurrence.isoformat(),
+                "transaction_date_kind": date_kind,
+                "bill_date": bill_date.isoformat() if bill_date else None,
+            }
         description = (
             raw.get("description")
             or raw.get("payee")
@@ -519,7 +555,8 @@ class SimpleFinProvider(BankProvider):
             currency=_iso_currency(raw.get("currency"), None),
             status=status,
             payee=payee,
-            raw_data=raw,
+            raw_data=raw_data,
+            provider_bill_date=bill_date,
         )
 
     async def get_holdings(self, credentials: dict) -> list[HoldingData]:
