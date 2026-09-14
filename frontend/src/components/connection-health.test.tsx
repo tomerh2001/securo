@@ -161,7 +161,7 @@ describe('durable connection recovery', () => {
   it('honors the persisted worker cooldown after an accepted request fails with a retry limit', async () => {
     vi.mocked(connections.operations).mockResolvedValue([operation({ status: 'failed', finished_at: new Date().toISOString(), retry_after_seconds: 120 })])
     renderWithProviders(<ConnectionHealth connection={conn} />)
-    await screen.findByText(/To avoid repeated sign-in attempts/)
+    await screen.findByText(/Another attempt is available after/)
     expect(screen.getByRole('button', { name: 'Update from provider' })).toBeDisabled()
     expect(connections.startOperation).not.toHaveBeenCalled()
   })
@@ -174,6 +174,18 @@ describe('durable connection recovery', () => {
     const { user } = renderWithProviders(<ConnectionHealth connection={conn} />)
     await user.click(await screen.findByRole('button', { name: 'Cancel sign-in' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('The sign-in request could not be canceled')
+  })
+
+  it('formats the next scheduled attempt in its displayed provider timezone', async () => {
+    renderWithProviders(<ConnectionHealth connection={conn} />)
+    expect(await screen.findByText(/Next scheduled attempt:/)).toHaveTextContent('9/14/2026, 7:00:00 AM · Asia/Jerusalem')
+  })
+  it('disables saved imports after a persisted provider data-request limit', async () => {
+    vi.mocked(connections.operations).mockResolvedValue([operation({ kind: 'import', status: 'failed', message_code: 'provider_rate_limited', finished_at: new Date().toISOString(), retry_after_seconds: 60 })])
+    renderWithProviders(<ConnectionHealth connection={conn} supportsSourceRefresh={false} />)
+    await screen.findByText(/No new import was completed/)
+    expect(screen.getByRole('button', { name: 'Import saved updates' })).toBeDisabled()
+    expect(connections.startOperation).not.toHaveBeenCalled()
   })
 
 })

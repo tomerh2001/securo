@@ -93,7 +93,11 @@ export function ConnectionHealth({ connection, onReconnect, supportsSourceRefres
     mutationFn: () => connections.cancelVerification(connection.id, active!.id),
     onSettled: () => { setVerificationCode(''); operations.refetch(); health.refetch() },
   })
-  const date = (value: string | null | undefined) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString(locale) : t('connectionHealth.notYet')
+  const date = (value: string | null | undefined, timeZone?: string) => {
+    if (!value || !Number.isFinite(Date.parse(value))) return t('connectionHealth.notYet')
+    try { return new Date(value).toLocaleString(locale, timeZone ? { timeZone } : undefined) }
+    catch { return t('connectionHealth.notYet') }
+  }
   const codeText = (code: string | null, fallback = 'operationUnknown') => code ? t(`connectionHealth.codes.${code}`, { defaultValue: t(`connectionHealth.${fallback}`) }) : t(`connectionHealth.${fallback}`)
   const check = () => { operations.refetch(); if (supportsSourceRefresh) health.refetch() }
   if (operations.isLoading || (supportsSourceRefresh && health.isLoading)) return <Skeleton className="h-64 rounded-xl" />
@@ -109,6 +113,7 @@ export function ConnectionHealth({ connection, onReconnect, supportsSourceRefres
     ? (Date.parse(latest.finished_at) || 0) + latest.retry_after_seconds * 1000 : 0
   const waitUntil = Math.max(otp?.nextAllowedAt ? Date.parse(otp.nextAllowedAt) || 0 : 0, retryAt ?? 0, operationRetryAt)
   const limited = waitUntil > now
+  const importLimited = latest?.message_code === 'provider_rate_limited' && operationRetryAt > now
   const blockedPhone = !!needsSignIn && (!otp?.enabled || !otp.ready)
   const busy = !!active || start.isPending || !!data?.collection.running
   const reconnectNeeded = !['active', 'syncing'].includes(connection.status)
@@ -151,7 +156,7 @@ export function ConnectionHealth({ connection, onReconnect, supportsSourceRefres
         {canWrite && (accessExpired || (!supportsSourceRefresh && reconnectNeeded)) && onReconnect && <Button onClick={onReconnect}>{t('accounts.reconnect')}</Button>}
         {canWrite && supportsSourceRefresh && active?.kind !== 'recover' && !accessExpired && (!blockedPhone || !data?.manualVerificationAvailable || busy) && <Button onClick={() => start.mutate('refresh')} disabled={!canRefresh}><RefreshCw size={15} className={busy ? 'animate-spin' : ''} />{t(busy ? 'connectionHealth.updatingTitle' : 'connectionHealth.updateNow')}</Button>}
         {canWrite && !active && data?.manualVerificationAvailable && needsSignIn && !accessExpired && <Button variant={blockedPhone ? 'default' : 'outline'} onClick={() => start.mutate('recover')} disabled={busy || limited || operations.isError || health.isError}><Smartphone size={15} />{t('connectionHealth.signInByText')}</Button>}
-        {canWrite && active?.kind !== 'recover' && !accessExpired && !(reconnectNeeded && !supportsSourceRefresh) && <Button variant="outline" onClick={() => start.mutate('import')} disabled={busy || operations.isError}>{t('connectionHealth.importSaved')}</Button>}
+        {canWrite && active?.kind !== 'recover' && !accessExpired && !(reconnectNeeded && !supportsSourceRefresh) && <Button variant="outline" onClick={() => start.mutate('import')} disabled={busy || operations.isError || importLimited}>{t('connectionHealth.importSaved')}</Button>}
         {canWrite && active?.kind === 'recover' && recovery?.challengeId === active.id && ['starting', 'verifying'].includes(recovery.state) && <Button variant="outline" onClick={() => cancelVerification.mutate()} disabled={cancelVerification.isPending}>{t('connectionHealth.cancelSignIn')}</Button>}
         <Button variant="ghost" onClick={check} disabled={health.isFetching || operations.isFetching}>{t('connectionHealth.checkStatus')}</Button>
       </div>
@@ -181,7 +186,7 @@ export function ConnectionHealth({ connection, onReconnect, supportsSourceRefres
       <div className="rounded-xl border border-border bg-card p-5 space-y-3">
         <h3 className="flex items-center gap-2 text-sm font-semibold"><Clock3 size={17} className="text-muted-foreground" />{t('connectionHealth.schedule')}</h3>
         <p className="text-sm">{supportsSourceRefresh ? data?.schedule.enabled ? data.schedule.description || t('connectionHealth.scheduleUnknown') : t('connectionHealth.scheduleDisabled') : t('connectionHealth.providerSchedule')}</p>
-        {data?.schedule.enabled && <p className="text-xs text-muted-foreground">{t('connectionHealth.nextRun')}: {date(data.schedule.nextRunAt)} · {data.schedule.timezone}</p>}
+        {data?.schedule.enabled && <p className="text-xs text-muted-foreground">{t('connectionHealth.nextRun')}: {date(data.schedule.nextRunAt, data.schedule.timezone)} · {data.schedule.timezone}</p>}
         <p className="text-xs leading-relaxed text-muted-foreground">{t('connectionHealth.serverContinues')}</p>
       </div>
     </section>
