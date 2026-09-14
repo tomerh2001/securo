@@ -1,6 +1,7 @@
 """Pull provider-specific investment feeds from administrator-configured collectors."""
 import hashlib
 import re
+import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -9,7 +10,7 @@ from pydantic import ValidationError
 
 from app.core.config import get_settings
 from app.providers.base import BankProvider, ConnectionData, SessionExpiredError, SourceControlError
-from app.schemas.connection_source import CollectorControlStatus, SourceRefreshResult
+from app.schemas.connection_source import CollectorControlStatus, SourceRefreshResult, SourceRecoveryResponse
 from app.schemas.investment_feed import InvestmentFeed
 
 SOURCE_NAMES = {
@@ -95,6 +96,7 @@ class InvestmentFeedProvider(BankProvider):
 
     async def _control_request(
         self, method: str, action: str, source_provider: str, expected_provider: str | None = None,
+        *, payload: dict | None = None, recovery: bool = False,
     ):
         if source_provider == "hapoalim":
             raise SourceControlError("source_controls_unsupported", status_code=400)
@@ -127,7 +129,7 @@ class InvestmentFeedProvider(BankProvider):
             # A redirect must never receive the server's independent control token.
             # Streaming bounds memory as well as the model's disclosure surface.
             async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
-                async with client.stream(method, endpoint, headers=headers) as response:
+                async with client.stream(method, endpoint, headers=headers, **({"json": payload} if payload is not None else {})) as response:
                     body = bytearray()
                     async for chunk in response.aiter_bytes():
                         body.extend(chunk)
@@ -140,11 +142,17 @@ class InvestmentFeedProvider(BankProvider):
                             retry = 60
                         raise SourceControlError("source_refresh_rate_limited", status_code=429,
                                                  retry_after_seconds=retry)
+                    if recovery and response.status_code in (400, 404, 409, 410, 503):
+                        import json
+                        code = json.loads(body).get("error")
+                        if code in {"recovery_in_progress", "recovery_not_found", "recovery_not_waiting", "recovery_expired", "invalid_request", "source_identity_mismatch"}:
+                            raise SourceControlError(code, status_code=response.status_code)
                     if response.status_code == 409:
                         raise SourceControlError("source_identity_mismatch", status_code=409)
-                    if response.status_code not in ((202,) if method == "POST" else (200,)):
+                    allowed = (200, 202) if recovery else (202,) if method == "POST" else (200,)
+                    if response.status_code not in allowed:
                         raise SourceControlError("source_controls_unavailable")
-                    model = SourceRefreshResult if method == "POST" else CollectorControlStatus
+                    model = SourceRecoveryResponse if recovery else SourceRefreshResult if method == "POST" else CollectorControlStatus
                     return model.model_validate_json(body)
         except SourceControlError:
             raise
@@ -159,6 +167,20 @@ class InvestmentFeedProvider(BankProvider):
         if source_provider != expected_provider:
             raise SourceControlError("source_identity_mismatch", status_code=409)
         return await self._control_request("POST", "refresh", source_provider, expected_provider)
+
+    async def recovery_action(self, credentials: dict, expected_provider: str,
+                              request_id: uuid.UUID, *, code: str | None = None, cancel: bool = False):
+        source_provider = investment_source_provider(credentials)
+        if source_provider != expected_provider:
+            raise SourceControlError("source_identity_mismatch", status_code=409)
+        if code is not None:
+            action, method, payload = f"recovery/{request_id}/code", "POST", {"code": code}
+        elif cancel:
+            action, method, payload = f"recovery/{request_id}", "DELETE", {}
+        else:
+            action, method, payload = "recovery", "POST", {"requestId": str(request_id)}
+        return await self._control_request(method, action, source_provider, expected_provider,
+                                           payload=payload, recovery=True)
 
     async def get_investment_feed(self, credentials) -> InvestmentFeed:
         source_provider = investment_source_provider(credentials)

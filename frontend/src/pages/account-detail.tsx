@@ -1,20 +1,24 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { getAccountName } from '@/lib/account-utils'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, addDays, addMonths, parseISO } from 'date-fns'
-import { accounts, dashboard, transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
+import { accounts, connections, dashboard, transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
+import { loadCompleteAccountTransactions } from '@/lib/account-history-utils'
 import { localDateString } from '@/lib/date-utils'
 import { applyTransactionToBalance, excludeMaterializedProjections, transactionAmountForBalance } from '@/lib/account-detail-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { toast } from 'sonner'
 import type { CreditCardBill, ProjectedTransaction, Transaction } from '@/types'
+import { AccountWorkspace, AccountWorkspaceHeader, AccountSectionTabs, AccountConnectionPanel, AccountDataStatus, AccountBalanceSummary } from '@/components/account-workspace'
+import { AccountHistory } from '@/components/account-history'
+import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, X } from 'lucide-react'
+import { ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, X } from 'lucide-react'
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { CategoryIcon } from '@/components/category-icon'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
@@ -271,6 +275,20 @@ type TxWithBalance = Transaction & { runningBalance: number }
 
 export default function AccountDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = ['activity', 'history', 'connection'].includes(searchParams.get('tab') ?? '') ? searchParams.get('tab')! : 'overview'
+  const changeTab = (value: string) => {
+    if (value === 'overview' && allHistory) {
+      setAllHistory(false)
+      const range = account?.type === 'credit_card' ? defaultCycleForCreditCard(account.statement_close_day, account.payment_due_day, new Date()) : { start: defaultFrom(), end: defaultTo() }
+      setFilterFrom(range.start); setFilterTo(range.end)
+    }
+    const next = new URLSearchParams(searchParams)
+    if (value === 'overview') next.delete('tab'); else next.set('tab', value)
+    setSearchParams(next)
+  }
+  const { data: connectionList } = useQuery({ queryKey: ['connections'], queryFn: connections.list })
+
   const { t, i18n } = useTranslation()
   const { mask, privacyMode, MASK } = usePrivacyMode()
   const { user } = useAuth()
@@ -283,12 +301,13 @@ export default function AccountDetailPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
+  const [allHistory, setAllHistory] = useState(false)
   const [filterFrom, setFilterFrom] = useState(defaultFrom)
   const [filterTo, setFilterTo] = useState(defaultTo)
   const [showPrimary, setShowPrimary] = useState(false)
   const filterTouched = useRef(false)
-  const handleFilterFromChange = (v: string) => { filterTouched.current = true; setFilterFrom(v) }
-  const handleFilterToChange = (v: string) => { filterTouched.current = true; setFilterTo(v) }
+  const handleFilterFromChange = (v: string) => { filterTouched.current = true; setAllHistory(false); setFilterFrom(v) }
+  const handleFilterToChange = (v: string) => { filterTouched.current = true; setAllHistory(false); setFilterTo(v) }
   const shiftCycleBy = (direction: -1 | 1) => {
     filterTouched.current = true
     // Bill-aware nav: step through the bills list when we have it, so prev/next
@@ -355,14 +374,14 @@ export default function AccountDetailPage() {
   // set filterTo = bill.due_date when navigating to a bill, so the lookup is
   // a simple equality check.
   const activeBill = useMemo(() => {
-    if (!billsAsc.length) return null
+    if (allHistory || !billsAsc.length) return null
     return billsAsc.find(b => b.due_date === filterTo) ?? null
-  }, [billsAsc, filterTo])
+  }, [billsAsc, filterTo, allHistory])
   // True when the user is on the trailing in-progress cycle (CC has bills,
   // but the current view doesn't match any of them). Backend uses this to
   // exclude already-billed txs from the cycle window so they don't double-
   // count against the in-progress bar/total.
-  const isInProgressCycle = !activeBill && billsAsc.length > 0
+  const isInProgressCycle = !allHistory && !activeBill && billsAsc.length > 0
 
   useEffect(() => {
     if (!account || filterTouched.current) return
@@ -432,7 +451,7 @@ export default function AccountDetailPage() {
   // Previous cycle (for the Total da fatura comparison subtitle).
   // Only fires for credit cards with a statement_close_day set.
   const previousCycle = useMemo(() => {
-    if (!account || account.type !== 'credit_card' || !account.statement_close_day) return null
+    if (!account || !filterFrom || account.type !== 'credit_card' || !account.statement_close_day) return null
     const dayBeforeStart = new Date(parseISO(filterFrom + 'T00:00:00').getTime() - 86400000)
     return creditCardCycleBoundaries(account.statement_close_day, dayBeforeStart)
   }, [account, filterFrom])
@@ -503,9 +522,9 @@ export default function AccountDetailPage() {
     })),
   })
 
-  const { data: txData, isLoading: txLoading } = useQuery({
+  const { data: txData, isLoading: txLoading, isError: txError, refetch: refetchTransactions } = useQuery({
     queryKey: ['transactions', { account_id: id, bill_id: activeBill?.id, from: filterFrom, to: filterTo, limit: 500, include_opening_balance: true, unbilled_only: isInProgressCycle }],
-    queryFn: () => transactions.list({
+    queryFn: () => loadCompleteAccountTransactions(page => transactions.list({
       account_id: id,
       // When the active cycle is a real bill, prefer bill_id (Pluggy's
       // truth — picks up charges the bank rolled outside the nominal date
@@ -520,7 +539,8 @@ export default function AccountDetailPage() {
       to: filterTo || undefined,
       limit: 500,
       include_opening_balance: true,
-    }),
+      page,
+    })),
     enabled: !!id,
   })
 
@@ -530,7 +550,7 @@ export default function AccountDetailPage() {
   const { data: projectedTxData } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', { account_id: id, from: filterFrom, to: filterTo }],
     queryFn: () => dashboard.projectedTransactions({ account_id: id!, from: filterFrom, to: filterTo }),
-    enabled: !!id && account?.type !== 'credit_card',
+    enabled: !!id && !allHistory && account?.type !== 'credit_card',
   })
 
   const { data: categoriesList } = useQuery({
@@ -634,7 +654,7 @@ export default function AccountDetailPage() {
   // Virtual: rendered with a "Previsão" badge, non-clickable, and merged
   // into displayRows where running balances are computed for them.
   const projectedRows = useMemo((): TxWithBalance[] => {
-    if (!projectedTxData) return []
+    if (allHistory || !projectedTxData) return []
     const unmaterialized = excludeMaterializedProjections(
       projectedTxData,
       txData?.items ?? [],
@@ -688,7 +708,7 @@ export default function AccountDetailPage() {
       virtual: true,
       runningBalance: 0,
     }))
-  }, [projectedTxData, txData?.items, id])
+  }, [projectedTxData, txData?.items, id, allHistory])
 
   // Balance at the start of the period, used to seed the running-balance
   // walk so that the last row's balance matches the projected balance at
@@ -770,7 +790,7 @@ export default function AccountDetailPage() {
 
   const ccRunningTotal = useMemo((): TxWithBalance[] => {
     if (!isCreditCard || !txData?.items) return []
-    const ascending = [...txData.items].sort(
+    const ascending = txData.items.filter(tx => tx.source !== 'opening_balance').sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
     )
     let running = 0
@@ -863,78 +883,38 @@ export default function AccountDetailPage() {
     return <p className="text-muted-foreground">{t('accounts.notFound')}</p>
   }
 
+  const connection = connectionList?.find(item => item.id === account.connection_id)
+  const attention = !!connection && !['active', 'syncing'].includes(connection.status)
   return (
-    <div>
-      {/* Header */}
-      <div className="mb-6 space-y-4">
-        {/* Breadcrumb */}
-        <Link
-          to="/accounts"
-          className="inline-flex items-center text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-3.5 w-3.5 mr-1" />
-          {t('accounts.backToAccounts')}
-        </Link>
-
-        {/* Title row */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <h1 className="text-2xl sm:text-3xl font-semibold text-foreground tracking-tight truncate">
-              {getAccountName(account)}
-            </h1>
-            <div className="flex items-center gap-2 mt-1 overflow-hidden">
-              <span className="text-xs font-medium text-muted-foreground">
-                {t(`accounts.type${account.type.split('_').map(s => s[0].toUpperCase() + s.slice(1)).join('')}`, account.type)}
-              </span>
-              {isCreditCard && account.next_due_date && (() => {
-                const d = daysUntil(account.next_due_date)
-                if (d > 7) return null
-                const cfg = d < 0
-                  ? { bg: 'bg-rose-100 dark:bg-rose-500/20', text: 'text-rose-700 dark:text-rose-400', label: t('accounts.overdue') }
-                  : d === 0
-                    ? { bg: 'bg-rose-100 dark:bg-rose-500/20', text: 'text-rose-700 dark:text-rose-400', label: t('accounts.dueToday') }
-                    : d <= 3
-                      ? { bg: 'bg-rose-100 dark:bg-rose-500/20', text: 'text-rose-700 dark:text-rose-400', label: t('accounts.dueIn', { count: d }) }
-                      : { bg: 'bg-amber-100 dark:bg-amber-500/20', text: 'text-amber-700 dark:text-amber-400', label: t('accounts.dueIn', { count: d }) }
-                return (
-                  <>
-                    <span className="text-muted-foreground text-xs">·</span>
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${cfg.bg} ${cfg.text}`}>
-                      {cfg.label}
-                    </span>
-                  </>
-                )
-              })()}
-              {isCreditCard && canWrite && (!account.statement_close_day || !account.payment_due_day) && (
-                <>
-                  <span className="text-muted-foreground text-xs">·</span>
-                  <button
-                    type="button"
-                    onClick={() => setCcSettingsOpen(true)}
-                    title={t('accounts.cycleMissingHint')}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-500/30 transition-colors cursor-pointer"
-                  >
-                    <HelpCircle className="h-3 w-3" />
-                    {t('accounts.cycleMissing')}
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-          {!account.is_closed && canWrite && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0"
-              onClick={() => setTransferDialogOpen(true)}
-            >
-              <ArrowLeftRight className="h-4 w-4 mr-1" />
-              {t('transactions.transfer')}
-            </Button>
-          )}
-        </div>
+    <AccountWorkspace>
+      <AccountWorkspaceHeader
+        title={getAccountName(account)}
+        subtitle={<span className="flex flex-wrap items-center gap-2">{t(`accounts.type${account.type.split('_').map(s => s[0].toUpperCase() + s.slice(1)).join('')}`, account.type)}
+          {isCreditCard && canWrite && (!account.statement_close_day || !account.payment_due_day) && <button type="button" onClick={() => setCcSettingsOpen(true)} className="inline-flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400"><HelpCircle size={14} />{t('accounts.cycleMissing')}</button>}
+        </span>}
+        breadcrumbs={[
+          { label: t('accounts.title'), to: '/accounts' },
+          ...(account.connection_id ? [{ label: account.institution_name || connection?.institution_name || t('accountWorkspace.connection'), to: `/connections/${account.connection_id}` }] : []),
+          { label: getAccountName(account) },
+        ]}
+        actions={<>
+          {account.connection_id && <Button variant="outline" onClick={() => changeTab('connection')}>{t('accountWorkspace.connectionStatus')}</Button>}
+          {!account.is_closed && canWrite && <Button variant="outline" onClick={() => setTransferDialogOpen(true)}><ArrowLeftRight size={16} />{t('transactions.transfer')}</Button>}
+        </>}
+      />
+      <AccountDataStatus attention={attention} connectionId={account.connection_id}
+        message={connection ? `${t(`investmentAccounts.connectionStatuses.${connection.status}`, { defaultValue: t('accountWorkspace.connectedAccount') })}${connection.last_sync_at ? ` · ${t('accounts.lastSync')}: ${new Date(connection.last_sync_at).toLocaleString(dateLocale)}` : ''}` : t(account.connection_id ? 'accountWorkspace.connectedAccount' : 'accountWorkspace.manualAccount')} />
+      <AccountBalanceSummary
+        label={t(account.balance_semantics === 'next_statement_debit' ? 'accountWorkspace.nextStatementDebit' : isCreditCard && account.connection_id ? 'accountWorkspace.issuerReportedAmount' : 'accounts.currentBalance')}
+        amount={mask(formatCurrency(isCreditCard ? Number(account.current_balance) : totalBalance, isCreditCard ? account.currency : displayCurrency, locale))}
+        date={t('investmentAccounts.balanceDateUnknown')}
+      />
+      <Tabs value={tab} onValueChange={changeTab} className="gap-5">
+        <AccountSectionTabs />
+        {isCreditCard && <p className="text-xs leading-relaxed text-muted-foreground">{t('accountWorkspace.cardHistoryHelp')}</p>}
+      {(tab === 'overview' || tab === 'activity') && <div className="space-y-4">
         <div className="flex items-center gap-2 sm:gap-3">
-          {isCreditCard ? (
+          {isCreditCard && !allHistory ? (
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -1012,6 +992,7 @@ export default function AccountDetailPage() {
               className="text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] px-3 shrink-0"
               onClick={() => {
                 filterTouched.current = false
+                setAllHistory(false)
                 if (account?.type === 'credit_card') {
                   const { start, end } = defaultCycleForCreditCard(
                     account.statement_close_day,
@@ -1047,7 +1028,7 @@ export default function AccountDetailPage() {
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
       {account.is_closed && (
         <div className="flex items-center justify-between rounded-lg border border-border bg-muted px-4 py-3 mb-6">
@@ -1065,6 +1046,8 @@ export default function AccountDetailPage() {
         </div>
       )}
 
+      <TabsContent value="overview" className="space-y-6">
+        <AccountHistory accountId={account.id} kind="bank" compact onOpen={() => changeTab('history')} />
       {/* Bill timeline (last 6 cycles) — only for CC with cycle metadata */}
       {isCreditCard && timelineCycles.length > 0 && (() => {
         const dfLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
@@ -1193,10 +1176,10 @@ export default function AccountDetailPage() {
             ? creditCardCycleLabel(previousCycle.end, account.payment_due_day, i18n.language)
             : null
         return (
-          <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
-            <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4 overflow-hidden">
+          <div className={account.balance_semantics === 'next_statement_debit' ? 'grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 mb-6' : 'grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-4 mb-6'}>
+            <div className={`${account.balance_semantics === 'next_statement_debit' ? '' : 'col-span-2 sm:col-span-1'} bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4 overflow-hidden`}>
               <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1 truncate">
-                {t('accounts.cycleBillTotal')}
+                {t('accountWorkspace.netCharges')}
               </p>
               <p className="text-[length:clamp(0.7rem,3.5vw,1.25rem)] sm:text-2xl font-bold tabular-nums text-foreground">
                 {mask(formatCurrency(billTotal, displayCurrency, locale))}
@@ -1207,7 +1190,7 @@ export default function AccountDetailPage() {
                 </p>
               )}
             </div>
-            <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4 overflow-hidden">
+            {account.balance_semantics !== 'next_statement_debit' && <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4 overflow-hidden">
               <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1 truncate">
                 {t('accounts.availableCredit')}
                 <span className="inline-flex items-center px-1 py-0 rounded text-[8px] sm:text-[9px] font-bold uppercase tracking-wide bg-muted text-muted-foreground shrink-0">
@@ -1219,7 +1202,7 @@ export default function AccountDetailPage() {
                   ? mask(formatCurrency(Number(account.available_credit), account.currency, locale))
                   : '—'}
               </p>
-            </div>
+            </div>}
             <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4 overflow-hidden">
               <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1 truncate">
                 {t('accounts.dueDate')}
@@ -1236,15 +1219,7 @@ export default function AccountDetailPage() {
           </div>
         )
       })() : (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 mb-6">
-          <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4 overflow-hidden">
-            <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1 truncate">
-              {t('accounts.currentBalance')}
-            </p>
-            <p className={`text-[length:clamp(0.7rem,3.5vw,1.25rem)] sm:text-2xl font-bold tabular-nums ${(summary?.current_balance ?? 0) < 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
-              {mask(formatCurrency(totalBalance, displayCurrency, locale))}
-            </p>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 mb-6">
           <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4 overflow-hidden">
             <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1 truncate">
               {t('accounts.projectedBalance', 'Projected balance')}
@@ -1332,7 +1307,7 @@ export default function AccountDetailPage() {
                 </button>
               )}
             </div>
-            {limit != null && pct != null && rawPct != null && (
+            {account.balance_semantics !== 'next_statement_debit' && limit != null && pct != null && rawPct != null && (
               <>
                 <div className="flex items-baseline justify-between mb-2">
                   <p className="text-[10px] sm:text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -1418,7 +1393,7 @@ export default function AccountDetailPage() {
           </p>
         </div>
         <div className="px-1 pb-4 h-[280px]">
-          {txLoading ? (
+          {txError ? <div role="alert" className="p-5 space-y-3"><p className="text-sm">{t('accountWorkspace.transactionsError')}</p><Button variant="outline" onClick={() => refetchTransactions()}>{t('investments.retry')}</Button></div> : txLoading ? (
             <Skeleton className="h-full w-full" />
           ) : cycleEmpty ? (
             <div className="h-full w-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
@@ -1526,13 +1501,21 @@ export default function AccountDetailPage() {
         )
       })()}
 
+        <Button variant="outline" onClick={() => changeTab('activity')}>{t('investmentAccounts.viewActivity')}<ChevronRight size={15} /></Button>
+      </TabsContent>
+      <TabsContent value="history" className="space-y-4">
+        <AccountHistory accountId={account.id} kind="bank" onShowTransactions={(from, to) => { filterTouched.current = true; setAllHistory(true); setFilterFrom(from); setFilterTo(to); changeTab('activity') }} />
+      </TabsContent>
+      <TabsContent value="connection"><AccountConnectionPanel connectionId={account.connection_id} institution={account.institution_name} /></TabsContent>
+      <TabsContent value="activity">
+      {allHistory && <p className="mb-3 text-sm font-medium">{t('accountWorkspace.allHistory')}</p>}
       {/* Transaction table */}
       <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-border">
           <p className="font-semibold text-foreground">{t('transactions.title')}</p>
         </div>
         <div className="p-0">
-          {txLoading ? (
+          {txError ? <div role="alert" className="p-5 space-y-3"><p className="text-sm">{t('accountWorkspace.transactionsError')}</p><Button variant="outline" onClick={() => refetchTransactions()}>{t('investments.retry')}</Button></div> : txLoading ? (
             <div className="p-6 space-y-3">
               {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10" />)}
             </div>
@@ -1584,7 +1567,7 @@ export default function AccountDetailPage() {
                     <th className="px-2 sm:px-4 py-3 text-left font-medium">{t('transactions.description')}</th>
                     <th className="px-2 sm:px-4 py-3 text-left font-medium hidden md:table-cell">{t('transactions.category')}</th>
                     <th className="px-2 sm:px-4 py-3 text-right font-medium whitespace-nowrap">{t('transactions.amount')}</th>
-                    <th className="px-2 sm:px-4 py-3 text-right font-medium hidden sm:table-cell whitespace-nowrap">{t('accounts.runningBalance')}</th>
+                    <th className="px-2 sm:px-4 py-3 text-right font-medium hidden sm:table-cell whitespace-nowrap">{t(isCreditCard ? 'accountWorkspace.cumulativeActivity' : 'accounts.runningBalance')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1708,6 +1691,9 @@ export default function AccountDetailPage() {
         </div>
       </div>
 
+      </TabsContent>
+      </Tabs>
+
       <TransactionDialog
         open={dialogOpen}
         onClose={() => { setDialogOpen(false); setEditingTx(null) }}
@@ -1745,7 +1731,7 @@ export default function AccountDetailPage() {
           loading={ccSettingsMutation.isPending}
         />
       )}
-    </div>
+    </AccountWorkspace>
   )
 }
 

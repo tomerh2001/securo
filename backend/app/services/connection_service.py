@@ -33,6 +33,7 @@ from app.providers.base import (
     ProviderRateLimited,
     ProviderUserActionRequired,
     SessionExpiredError,
+    TransactionData,
 )
 from app.services import oauth_state
 from app.services import admin_service
@@ -57,6 +58,25 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 _PROVIDER_SELL_DATE_METADATA_KEY = "_securo_provider_sell_date"
+
+
+def _refresh_provider_billing(transaction, account, incoming: TransactionData) -> None:
+    """Refresh billing truth without changing a stored occurrence or user override.
+
+    Historical date corrections require a separately validated recovery pass.
+    A linked statement is more authoritative than transaction-level metadata.
+    """
+    if (
+        incoming.provider_bill_date is None
+        or transaction.date != incoming.date
+        or transaction.effective_bill_date is not None
+        or transaction.bill_id is not None
+    ):
+        return
+    marker = (incoming.raw_data or {}).get("_securo_provider_dates")
+    if isinstance(marker, dict):
+        transaction.raw_data = {**(transaction.raw_data or {}), "_securo_provider_dates": marker}
+    apply_effective_date(transaction, account, bill_due_date=incoming.provider_bill_date)
 
 
 def _clean_logo_url(value: object) -> Optional[str]:
@@ -1107,6 +1127,7 @@ async def handle_oauth_callback(
             masked_number=acc_data.masked_number,
             type=acc_data.type,
             balance=acc_data.balance,
+            balance_semantics=acc_data.balance_semantics,
             currency=acc_data.currency,
             credit_limit=acc_data.credit_limit if is_cc else None,
             statement_close_day=acc_data.statement_close_day if is_cc else None,
@@ -1149,6 +1170,7 @@ async def handle_oauth_callback(
                     synced_dup.status = "posted"
                     synced_dup.external_id = txn_data.external_id
                     synced_dup.raw_data = txn_data.raw_data
+                    _refresh_provider_billing(synced_dup, account, txn_data)
                     if (
                         txn_data.bill_external_id
                         and synced_dup.effective_bill_date is None
@@ -1201,7 +1223,7 @@ async def handle_oauth_callback(
                 bill_id=bill.id if bill else None,
             )
             apply_effective_date(
-                transaction, account, bill_due_date=bill.due_date if bill else None
+                transaction, account, bill_due_date=bill.due_date if bill else txn_data.provider_bill_date
             )
             session.add(transaction)
             await session.flush()
@@ -1675,6 +1697,8 @@ async def sync_connection(
     workspace_id: uuid.UUID,
     requesting_user_id: uuid.UUID,
     trigger_provider_refresh: bool = False,
+    *,
+    raise_on_rate_limit: bool = False,
 ) -> tuple[BankConnection, int]:
     connection = await get_connection(session, connection_id, workspace_id)
     if not connection:
@@ -1811,6 +1835,8 @@ async def sync_connection(
                     connection.provider, account.type, acc_data.balance
                 )
                 account.name = acc_data.name
+                if acc_data.balance_semantics is not None:
+                    account.balance_semantics = acc_data.balance_semantics
                 # Backfills existing accounts on their next sync. Only written
                 # when the provider actually returns an identifier, so a payload
                 # that intermittently omits it can't blank out a known mask.
@@ -1849,6 +1875,7 @@ async def sync_connection(
                     masked_number=acc_data.masked_number,
                     type=acc_data.type,
                     balance=acc_data.balance,
+                    balance_semantics=acc_data.balance_semantics,
                     currency=acc_data.currency,
                     credit_limit=acc_data.credit_limit if is_cc else None,
                     statement_close_day=acc_data.statement_close_day if is_cc else None,
@@ -1911,6 +1938,7 @@ async def sync_connection(
                         existing_tx.original_description = txn_data.description
                     if existing_tx.status == "pending" and txn_data.status == "posted":
                         existing_tx.status = "posted"
+                    _refresh_provider_billing(existing_tx, account, txn_data)
                     # Self-heal bill linkage: a tx that pre-dates the bills
                     # feature (or whose bill we hadn't ingested last time)
                     # picks up bill_id + bank-truth effective_date on the
@@ -1941,6 +1969,7 @@ async def sync_connection(
                     fuzzy_match.external_id = txn_data.external_id
                     fuzzy_match.source = "sync"
                     fuzzy_match.raw_data = txn_data.raw_data
+                    _refresh_provider_billing(fuzzy_match, account, txn_data)
                     if fuzzy_match.original_description is None:
                         fuzzy_match.original_description = txn_data.description
                     if not fuzzy_match.payee and txn_data.payee:
@@ -1965,6 +1994,7 @@ async def sync_connection(
                         synced_dup.status = "posted"
                         synced_dup.external_id = txn_data.external_id
                         synced_dup.raw_data = txn_data.raw_data
+                        _refresh_provider_billing(synced_dup, account, txn_data)
                         if (
                             txn_data.bill_external_id
                             and synced_dup.effective_bill_date is None
@@ -2028,7 +2058,7 @@ async def sync_connection(
                 apply_effective_date(
                     transaction,
                     account,
-                    bill_due_date=bill.due_date if bill else None,
+                    bill_due_date=bill.due_date if bill else txn_data.provider_bill_date,
                 )
                 preview = await preview_rules_for_transaction(
                     session, user_id, transaction
@@ -2056,6 +2086,7 @@ async def sync_connection(
                     placeholder.source = "sync"
                     placeholder.status = txn_data.status
                     placeholder.raw_data = txn_data.raw_data
+                    _refresh_provider_billing(placeholder, account, txn_data)
                     # Same shape as the import path: fold in the `preview` the
                     # rules already produced from the incoming charge instead of
                     # re-running them against the placeholder, whose description
@@ -2190,6 +2221,10 @@ async def sync_connection(
             conn = await session.get(BankConnection, connection_id)
             if conn and conn.status != "expired":
                 conn.status = "active"
+        if raise_on_rate_limit:
+            # A user-facing durable operation must report that no import
+            # completed; the scheduler may quietly defer its routine read.
+            raise
         # The row can vanish if the connection was deleted mid-sync. Fall back
         # to the one we already hold rather than raising: re-raising here would
         # escape as a 500, which is exactly what this handler exists to avoid.

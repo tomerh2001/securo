@@ -31,9 +31,93 @@ from app.schemas.bank_connection import (
 from app.services import connection_service
 from app.services import connection_source_service
 from app.schemas.connection_source import ConnectionSourceStatus, SourceRefreshRequest, SourceRefreshResult
+from app.schemas.connection_operation import ConnectionOperationCreate, ConnectionOperationRead, ConnectionVerificationCode
+from app.services import connection_operation_service
 from app.services.transfer_detection_service import detect_transfer_pairs, unlink_transfer_pair
 
 router = APIRouter(prefix="/api/connections", tags=["connections"])
+
+
+@router.get("/{connection_id}/operations", response_model=list[ConnectionOperationRead])
+async def list_connection_operations(
+    connection_id: uuid.UUID,
+    response: Response,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return await connection_operation_service.list_operations(session, connection_id, ctx.workspace.id)
+    except SourceControlError as error:
+        raise _source_error(error) from None
+
+
+@router.post("/{connection_id}/operations", response_model=ConnectionOperationRead, status_code=202)
+async def start_connection_operation(
+    connection_id: uuid.UUID,
+    data: ConnectionOperationCreate,
+    request: Request,
+    response: Response,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    if request.query_params:
+        raise HTTPException(status_code=422, detail="Account updates do not accept query parameters")
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        operation, created = await connection_operation_service.start_operation(
+            session, connection_id, ctx.workspace.id, ctx.user_id, data.kind,
+        )
+        if created:
+            from app.tasks.connection_operation_tasks import advance
+            try:
+                advance.delay(str(operation.id))
+            except Exception:
+                await connection_operation_service.dispatch_failed(session, operation)
+        return operation
+    except SourceControlError as error:
+        raise _source_error(error) from None
+
+
+@router.post("/{connection_id}/operations/{operation_id}/verification", response_model=ConnectionOperationRead)
+async def submit_connection_verification(
+    connection_id: uuid.UUID,
+    operation_id: uuid.UUID,
+    data: ConnectionVerificationCode,
+    request: Request,
+    response: Response,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    if request.query_params:
+        raise HTTPException(status_code=422, detail="Verification does not accept query parameters")
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return await connection_operation_service.verify_operation(
+            session, connection_id, ctx.workspace.id, operation_id, code=data.code,
+        )
+    except SourceControlError as error:
+        raise _source_error(error) from None
+
+
+@router.delete("/{connection_id}/operations/{operation_id}/verification", response_model=ConnectionOperationRead)
+async def cancel_connection_verification(
+    connection_id: uuid.UUID,
+    operation_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    if request.query_params:
+        raise HTTPException(status_code=422, detail="Verification does not accept query parameters")
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return await connection_operation_service.verify_operation(
+            session, connection_id, ctx.workspace.id, operation_id, cancel=True,
+        )
+    except SourceControlError as error:
+        raise _source_error(error) from None
 
 
 def _source_error(error: SourceControlError) -> HTTPException:

@@ -12,6 +12,8 @@ import type {
   CategoryGroup,
   BankConnection,
   ConnectionSourceStatus,
+  ConnectionOperation,
+  AccountHistoryCoverage,
   ConnectionSettings,
   Account,
   AccountSummary,
@@ -414,6 +416,22 @@ export const connections = {
     const { data } = await api.get(`/connections/${id}/source/status`)
     return data
   },
+  operations: async (id: string): Promise<ConnectionOperation[]> => {
+    const { data } = await api.get(`/connections/${id}/operations`)
+    return data
+  },
+  startOperation: async (id: string, kind: ConnectionOperation['kind']): Promise<ConnectionOperation> => {
+    const { data } = await api.post(`/connections/${id}/operations`, { kind })
+    return data
+  },
+  submitVerification: async (id: string, operationId: string, code: string): Promise<ConnectionOperation> => {
+    const { data } = await api.post(`/connections/${id}/operations/${operationId}/verification`, { code })
+    return data
+  },
+  cancelVerification: async (id: string, operationId: string): Promise<ConnectionOperation> => {
+    const { data } = await api.delete(`/connections/${id}/operations/${operationId}/verification`)
+    return data
+  },
   refreshSource: async (id: string): Promise<{ result: 'started' | 'already_running'; retryAfterSeconds: number }> => {
     const { data } = await api.post(`/connections/${id}/source/refresh`)
     return data
@@ -436,6 +454,10 @@ export const connections = {
 
 // Accounts
 export const accounts = {
+  historyCoverage: async (id: string): Promise<AccountHistoryCoverage> => {
+    const { data } = await api.get(`/accounts/${id}/history-coverage`)
+    return data
+  },
   list: async (includeClosed = false): Promise<Account[]> => {
     const { data } = await api.get('/accounts', { params: { include_closed: includeClosed } })
     return data
@@ -1122,6 +1144,10 @@ export const dashboard = {
 }
 
 export const investmentAccounts = {
+  historyCoverage: async (id: string): Promise<AccountHistoryCoverage> => {
+    const { data } = await api.get(`/investment-accounts/${id}/history-coverage`)
+    return data
+  },
   list: async (connectionId?: string): Promise<InvestmentAccount[]> => {
     const { data } = await api.get('/investment-accounts', { params: { connection_id: connectionId } })
     return data

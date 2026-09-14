@@ -4,6 +4,7 @@ from app.models.workspace import Workspace, WorkspaceMember, WorkspaceTaxId
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.models.bank_connection import BankConnection
+from app.models.connection_operation import ConnectionOperation
 from app.models.institution import Institution
 from app.models.account import Account
 from app.models.transaction import Transaction
@@ -44,6 +45,7 @@ __all__ = [
     "Category",
     "CategoryGroup",
     "BankConnection",
+    "ConnectionOperation",
     "Institution",
     "Account",
     "Transaction",

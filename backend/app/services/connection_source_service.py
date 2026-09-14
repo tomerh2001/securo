@@ -88,3 +88,11 @@ async def request_source_refresh(
     # The collector atomically compares this identity immediately before it
     # starts collection, closing a provider-switch race between GET and POST.
     return await provider.request_source_refresh(connection.credentials or {}, control.source.provider)
+
+
+async def recovery_action(session, connection_id, workspace_id, request_id, *, code=None, cancel=False):
+    connection, provider, control = await _verified_source(session, connection_id, workspace_id)
+    if not isinstance(provider, InvestmentFeedProvider) or not control.manualVerificationAvailable:
+        raise SourceControlError("source_controls_unsupported", status_code=400)
+    return await provider.recovery_action(connection.credentials or {}, control.source.provider,
+                                         request_id, code=code, cancel=cancel)

@@ -79,6 +79,8 @@ class AccountData:
     institution_external_id: Optional[str] = None
     institution_name: Optional[str] = None
     institution_logo_url: Optional[str] = None
+    # Meaning of the supplied amount; unknown until explicitly stated by the source.
+    balance_semantics: Optional[Literal["balance", "next_statement_debit"]] = None
 
 
 @dataclass
@@ -102,6 +104,8 @@ class TransactionData:
     # Provider-side identifier of the bill this transaction belongs to.
     # Resolved to a credit_card_bills.id FK at sync time (issue #92).
     bill_external_id: Optional[str] = None
+    # Exact provider billing date, independent of purchase/occurrence date.
+    provider_bill_date: Optional[date] = None
 
 
 @dataclass

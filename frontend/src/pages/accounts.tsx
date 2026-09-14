@@ -5,7 +5,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import axios from 'axios'
 import { accounts, connections, currencies, investmentAccounts } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
@@ -141,27 +140,6 @@ export default function AccountsPage() {
   })
   const closedAccounts = closedAccountsList?.filter((a) => a.is_closed && (activeAccountIds === null || activeAccountIds.includes(a.id))) ?? []
 
-  const syncMutation = useMutation({
-    mutationFn: (id: string) => connections.sync(id),
-    onSuccess: (result) => {
-      invalidateFinancialQueries(queryClient)
-      queryClient.invalidateQueries({ queryKey: ['connections'] })
-      toast.success(t('accounts.syncDone'))
-      const merged = (result as BankConnection & { merged_count?: number })?.merged_count
-      if (merged && merged > 0) {
-        toast.info(t('accounts.mergedCount', { count: merged }))
-      }
-    },
-    onError: (err) => {
-      queryClient.invalidateQueries({ queryKey: ['connections'] })
-      const detail = axios.isAxiosError(err)
-        ? err.response?.data?.detail
-        : null
-      const message = typeof detail === 'string' ? detail : detail?.message
-      toast.error(message || t('accounts.syncError'))
-    },
-  })
-
   const disconnectMutation = useMutation({
     mutationFn: (id: string) => connections.delete(id),
     onSuccess: () => {
@@ -252,7 +230,7 @@ export default function AccountsPage() {
   }, [hash, isLoading])
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-6xl space-y-6">
       <PageHeader
         section={t('accounts.title')}
         title={t('accounts.title')}
@@ -297,7 +275,7 @@ export default function AccountsPage() {
                   current: '',
                 }
                 const statusLabel = sourceNeedsAttention ? sourceLabels[sourceState] : t(`investmentAccounts.connectionStatuses.${conn.status}`, { defaultValue: conn.status })
-                const syncPending = syncMutation.isPending && syncMutation.variables === conn.id
+                const syncPending = conn.status === 'syncing'
                 return (
                   <div key={conn.id} className="bg-card rounded-xl border border-border shadow-sm">
                     {/* Provider identity, connection health and secondary actions. */}
@@ -325,10 +303,11 @@ export default function AccountsPage() {
                           <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground" aria-label={`${t('common.more')}: ${getConnectionName(conn, t)}`}><MoreHorizontal size={17} /></Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onSelect={() => sourceNeedsAttention ? navigate(`/connections/${conn.id}#connection-health`) : needsReconnect ? handleReconnectClick(conn) : syncMutation.mutate(conn.id)} disabled={syncPending || conn.status === 'syncing'}>
+                          <DropdownMenuItem onSelect={() => navigate(`/connections/${conn.id}#connection-health`)}>
                             <RefreshCw size={14} className={syncPending ? 'animate-spin' : ''} />
-                            {sourceNeedsAttention ? t('investmentAccounts.fixConnection', { defaultValue: 'Fix connection' }) : needsReconnect ? t('accounts.reconnect') : t('accounts.sync')}
+                            {t('accountWorkspace.manageConnection')}
                           </DropdownMenuItem>
+                          {needsReconnect && <DropdownMenuItem onSelect={() => handleReconnectClick(conn)}>{t('accounts.reconnect')}</DropdownMenuItem>}
                           <DropdownMenuItem onSelect={() => setSettingsConnection(conn)}><Settings size={14} />{t('connections.settings')}</DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem variant="destructive" onSelect={() => setDisconnectingConnection(conn)} disabled={disconnectMutation.isPending}><Unlink size={14} />{t('accounts.disconnect')}</DropdownMenuItem>
@@ -367,7 +346,8 @@ export default function AccountsPage() {
                                 <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
                                   {mask(formatCurrency(bal, acc.currency, locale))}
                                 </p>
-                                {isCC && acc.available_credit != null ? (
+                                {isCC && acc.connection_id && <p className="text-[10px] text-muted-foreground">{t(acc.balance_semantics === 'next_statement_debit' ? 'accountWorkspace.nextStatementDebit' : 'accountWorkspace.issuerReportedAmount')}</p>}
+                                {isCC && acc.balance_semantics !== 'next_statement_debit' && acc.available_credit != null ? (
                                   <p className="text-[10px] text-muted-foreground tabular-nums">
                                     {t('accounts.availableCredit')}: {mask(formatCurrency(Number(acc.available_credit), acc.currency, locale))}
                                   </p>
@@ -448,7 +428,7 @@ export default function AccountsPage() {
                         <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
                           {mask(formatCurrency(bal, acc.currency, locale))}
                         </p>
-                        {isCC && acc.available_credit != null ? (
+                        {isCC && acc.balance_semantics !== 'next_statement_debit' && acc.available_credit != null ? (
                           <p className="text-[10px] text-muted-foreground tabular-nums">
                             {t('accounts.availableCredit')}: {mask(formatCurrency(Number(acc.available_credit), acc.currency, locale))}
                           </p>

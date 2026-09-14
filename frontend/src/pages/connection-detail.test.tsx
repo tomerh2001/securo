@@ -12,7 +12,7 @@ const state = vi.hoisted(() => ({
 const api = vi.hoisted(() => ({
   accounts: { list: vi.fn() },
   investmentAccounts: { list: vi.fn() },
-  connections: { list: vi.fn(), getProviders: vi.fn(), updateSettings: vi.fn(), sync: vi.fn(), sourceStatus: vi.fn() },
+  connections: { list: vi.fn(), getProviders: vi.fn(), updateSettings: vi.fn(), sync: vi.fn(), sourceStatus: vi.fn(), operations: vi.fn(), startOperation: vi.fn() },
 }))
 vi.mock('@/lib/api', () => api)
 vi.mock('@/hooks/use-display-locale', () => ({ useDisplayLocale: () => 'en-US', useDateLocale: () => 'en-US' }))
@@ -50,6 +50,8 @@ beforeEach(() => {
     { name: 'investment_feed', display_name: 'Investment collector', supports_asset_sync: true, flow_type: 'token' },
   ])
   api.connections.updateSettings.mockResolvedValue(connectionFixture())
+  api.connections.operations.mockResolvedValue([])
+  api.connections.startOperation.mockResolvedValue({ id: 'op1', connection_id: 'clal-connection', kind: 'import', status: 'queued', requested_at: new Date().toISOString(), events: [], result: {} })
   api.connections.sync.mockResolvedValue(connectionFixture())
 })
 
@@ -67,7 +69,7 @@ describe('connection account destination', () => {
     expect(await screen.findByText(t('connectionHealth.hapoalimCachedHelp'))).toBeInTheDocument()
     expect(api.connections.sourceStatus).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: t('connectionHealth.importSaved') }))
-    await waitFor(() => expect(api.connections.sync).toHaveBeenCalledWith('clal-connection'))
+    await waitFor(() => expect(api.connections.startOperation).toHaveBeenCalledWith('clal-connection', 'import'))
   })
   it('loads the requested provider only and shows each bank and investment account once', async () => {
     renderPage()
@@ -163,6 +165,6 @@ describe('connection account destination', () => {
     expect(screen.queryByText(t('investmentAccounts.noAccountsInView', { defaultValue: 'No accounts in this view.' }))).not.toBeInTheDocument()
     await user.click(screen.getByRole('tab', { name: /Connection health/ }))
     await user.click(screen.getByRole('button', { name: t('connectionHealth.importSaved') }))
-    await waitFor(() => expect(api.connections.sync).toHaveBeenCalledWith('clal-connection'))
+    await waitFor(() => expect(api.connections.startOperation).toHaveBeenCalledWith('clal-connection', 'import'))
   })
 })

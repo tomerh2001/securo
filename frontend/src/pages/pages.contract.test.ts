@@ -33,6 +33,9 @@ describe('page modules', () => {
   for (const path of paths) {
     const name = path.replace(/^.*\/pages\//, '').replace(/\.tsx$/, '')
 
+    // The first lazy import compiles the shared page graph. Allow for that
+    // cold work while the full suite runs in parallel; this checks module
+    // correctness, not a browser performance budget.
     it(`${name} evaluates and default-exports a component`, async () => {
       const module = await modules[path]()
 
@@ -46,6 +49,6 @@ describe('page modules', () => {
             component !== null &&
             '$$typeof' in component),
       ).toBe(true)
-    })
+    }, 15_000)
   }
 })

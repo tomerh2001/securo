@@ -143,12 +143,61 @@ export interface BankConnection {
 /** Live collector health. Financial freshness is separate from importing saved data. */
 export interface ConnectionSourceStatus {
   available: boolean
+  manualVerificationAvailable: boolean
+  recovery: { challengeId: string; state: 'starting' | 'awaiting_code' | 'verifying' | 'complete' | 'failed' | 'canceled' | 'expired'; expiresAt: string | null; errorCode: string | null } | null
   observedAt: string
   source: InvestmentDetails['source']
   collection: { running: boolean; lastResult: string | null; lastStartedAt: string | null; lastFinishedAt: string | null }
   schedule: { enabled: boolean; expression: string; description: string | null; timezone: string; nextRunAt: string | null }
   automaticOtp: { enabled: boolean; ready: boolean; reason: string | null; nextAllowedAt: string | null }
   import: { lastImportedAt: string | null; checkIntervalMinutes: number; minimumIntervalMinutes: number }
+  session: {
+    status: 'unknown' | 'active' | 'auth_required' | 'error'
+    lastCheckedAt: string | null
+    lastRenewedAt: string | null
+    expiresAt: string | null
+    errorCode: string | null
+    observedAt: string
+    keepAliveEnabled: boolean
+    keepAliveMinutes: number
+    expired: boolean
+    overdue: boolean
+    verifiedActive: boolean
+  }
+}
+
+export interface ConnectionOperation {
+  id: string
+  connection_id: string
+  kind: 'refresh' | 'import' | 'recover'
+  status: 'queued' | 'collecting' | 'awaiting_verification' | 'importing' | 'succeeded' | 'partial' | 'failed'
+  message_code: string | null
+  requested_at: string
+  started_at: string | null
+  finished_at: string | null
+  source_last_success_before: string | null
+  source_last_success_after: string | null
+  imported_at: string | null
+  result: { transactions_added?: number; valuations_added?: number; activities_added?: number; executions_added?: number }
+  events: { at: string; stage: string; code: string | null }[]
+  retry_after_seconds: number | null
+}
+
+export interface AccountHistoryCoverage {
+  account_id: string
+  account_kind: 'bank' | 'investment'
+  balance_as_of: string | null
+  opening_balance_date: string | null
+  streams: {
+    kind: 'transactions' | 'valuations' | 'activities' | 'executions'
+    count: number
+    first_date: string | null
+    last_date: string | null
+    availability: 'available' | 'partial' | 'unavailable' | 'empty'
+    contains_archive: boolean
+    monthly_counts: { month: string; count: number }[]
+  }[]
+  note_codes: string[]
 }
 
 export interface ConnectionSettings {
@@ -174,6 +223,7 @@ export interface Account {
   type: string
   balance: number
   current_balance: number
+  balance_semantics?: 'balance' | 'next_statement_debit' | null
   previous_balance: number | null
   balance_primary: number | null
   currency: string
