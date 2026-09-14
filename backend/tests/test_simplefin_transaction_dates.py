@@ -145,3 +145,26 @@ async def test_import_and_resync_preserve_dates_descriptions_and_manual_override
         await sync_connection(session, conn.id, test_workspace.id, test_user.id)
         assert tx.date == tx.effective_date == date(2026, 10, 2)
         assert len((await session.execute(select(Transaction).where(Transaction.external_id == incoming.external_id))).scalars().all()) == 1
+
+
+@pytest.mark.parametrize("origin", ["actual_archive", "sure_archive"])
+def test_archive_identity_normalized_without_copying_source_record(origin):
+    provenance = {"origin": origin, "source_record_id": "c7ea7044-bf53-4538-8566-b2e640a73467",
+                  "unneeded_source_record": {"private": "data"}}
+    transaction = source_transaction(source_provenance=provenance)
+    assert transaction.raw_data is not None
+    assert transaction.raw_data["source_provenance"] == {
+        "origin": origin, "source_record_id": provenance["source_record_id"],
+    }
+    assert transaction.external_id == "stable-source-id"
+    assert transaction.description == "Original merchant"
+
+
+@pytest.mark.parametrize("value", [
+    None, [], {"origin": "guessed", "source_record_id": "c7ea7044-bf53-4538-8566-b2e640a73467"},
+    {"origin": "actual_archive", "source_record_id": "merchant-id"},
+    {"origin": "sure_archive", "source_record_id": 123},
+])
+def test_archive_origin_requires_recognized_source_and_record_uuid(value):
+    transaction = source_transaction(source_provenance=value)
+    assert transaction.raw_data is not None and "source_provenance" not in transaction.raw_data

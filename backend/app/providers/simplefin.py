@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import binascii
 import logging
+import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
@@ -100,6 +101,20 @@ def _calendar_date(value: Any) -> Optional[date]:
         return parsed if parsed.isoformat() == value else None
     except ValueError:
         return None
+
+
+def _archive_provenance(value: Any) -> Optional[dict]:
+    """Keep only explicit archive identity, without copying source records."""
+    if not isinstance(value, dict) or value.get("origin") not in ("actual_archive", "sure_archive"):
+        return None
+    record_id = value.get("source_record_id")
+    if not isinstance(record_id, str) or len(record_id) != 36:
+        return None
+    try:
+        parsed_id = uuid.UUID(record_id)
+    except ValueError:
+        return None
+    return {"origin": value["origin"], "source_record_id": str(parsed_id)}
 
 
 def _accounts_url_and_auth(access_url: str) -> tuple[str, Optional[tuple[str, str]]]:
@@ -523,7 +538,13 @@ class SimpleFinProvider(BankProvider):
         bill_date = _calendar_date(extra.get("charge_date")) if occurrence else None
         # Only this adapter creates the normalized marker. Never accept a
         # caller-supplied marker, and retain the original provider fields.
-        raw_data = {key: value for key, value in raw.items() if key != "_securo_provider_dates"}
+        raw_data = {
+            key: value for key, value in raw.items()
+            if key not in ("_securo_provider_dates", "source_provenance")
+        }
+        provenance = _archive_provenance(extra.get("source_provenance"))
+        if provenance:
+            raw_data["source_provenance"] = provenance
         if occurrence:
             raw_data["_securo_provider_dates"] = {
                 "provider": "simplefin",
