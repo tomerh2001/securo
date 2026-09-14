@@ -64,7 +64,8 @@ def test_raw_marker_cannot_override_adapter_validation():
     raw = {"id": "x", "amount": "1", "posted": 1790899200,
            "_securo_provider_dates": {"provider": "simplefin", "bill_date": "2030-01-01"}}
     transaction = SimpleFinProvider._build_transaction(raw, "none")
-    assert transaction is not None and "_securo_provider_dates" not in transaction.raw_data
+    assert transaction is not None and transaction.raw_data is not None
+    assert "_securo_provider_dates" not in transaction.raw_data
 
 
 @pytest.mark.parametrize("source,override,linked,expected", [
@@ -125,8 +126,9 @@ async def test_import_and_resync_preserve_dates_descriptions_and_manual_override
         account = await session.get(Account, tx.account_id)
         assert tx.date == date(2026, 9, 6) and tx.effective_date == date(2026, 10, 2)
         assert tx.effective_bill_date is None
+        assert account is not None
         assert account.balance_semantics == "next_statement_debit"
-        dto = AccountRead.model_validate(serialize_account(account, 0, None))
+        dto = AccountRead.model_validate(serialize_account(account, Decimal("0"), None))
         assert dto.balance_semantics == "next_statement_debit"
         tx.description = "Translated merchant"
         tx.notes = "Personal note"
