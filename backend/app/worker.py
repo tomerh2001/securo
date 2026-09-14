@@ -19,6 +19,10 @@ celery_app.conf.update(
 )
 
 celery_app.conf.beat_schedule = {
+    "resume-account-updates": {
+        "task": "app.tasks.connection_operation_tasks.recover",
+        "schedule": 60,
+    },
     "sync-all-connections-hourly": {
         "task": "app.tasks.sync_tasks.sync_all_connections",
         "schedule": 60 * 60,  # every hour; task itself skips connections synced < 4h ago
@@ -56,6 +60,7 @@ celery_app.conf.beat_schedule = {
 }
 
 celery_app.conf.include = [
+    "app.tasks.connection_operation_tasks",
     "app.tasks.sync_tasks",
     "app.tasks.recurring_tasks",
     "app.tasks.asset_tasks",

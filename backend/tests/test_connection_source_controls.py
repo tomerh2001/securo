@@ -61,6 +61,10 @@ def collector(monkeypatch):
         if request.url.path.endswith("/control/status"):
             return httpx.Response(state["status_status"], json=state["status"],
                                   headers={"Location": "https://evil.example/collect"})
+        if "/control/recovery" in request.url.path:
+            assert request.headers["x-investment-provider"] == state["status"]["source"]["provider"]
+            state["recovery_payload"] = json.loads(request.content)
+            return httpx.Response(state.get("recovery_status", 202), json=state["recovery"])
         assert request.url.path.endswith("/control/refresh")
         assert request.headers["x-investment-provider"] == state["status"]["source"]["provider"]
         return httpx.Response(state["refresh_status"], json=state["refresh"])
@@ -295,3 +299,50 @@ async def test_supported_but_different_controller_source_cannot_refresh(
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "source_identity_mismatch"
     assert not any(method == "POST" for method, _, _ in collector["calls"])
+
+
+async def test_manual_verification_protocol_sanitizes_and_keeps_read_control_capabilities_separate(
+    session, source_connection, collector,
+):
+    from app.services.connection_source_service import recovery_action
+    request_id = uuid.uuid4()
+    collector['status']['manualVerificationAvailable'] = True
+    collector['recovery'] = {'recovery': {
+        'challengeId': str(request_id), 'state': 'awaiting_code', 'expiresAt': '2026-09-15T12:03:00Z',
+        'errorCode': None, 'code': '654321', 'private': 'secret payload',
+    }}
+    response = await recovery_action(session, source_connection.id, source_connection.workspace_id, request_id)
+    assert response.recovery.challengeId == request_id
+    assert collector['recovery_payload'] == {'requestId': str(request_id)}
+    assert 'secret payload' not in response.model_dump_json() and '654321' not in response.model_dump_json()
+    assert [(method, path) for method, path, _ in collector['calls']] == [
+        ('GET', '/investments/v1'), ('GET', '/investments/v1/control/status'),
+        ('POST', '/investments/v1/control/recovery'),
+    ]
+    await recovery_action(session, source_connection.id, source_connection.workspace_id, request_id, code='123456')
+    assert collector['recovery_payload'] == {'code': '123456'}
+    assert collector['calls'][-1][:2] == ('POST', f'/investments/v1/control/recovery/{request_id}/code')
+    collector['recovery_status'] = 200
+    await recovery_action(session, source_connection.id, source_connection.workspace_id, request_id, cancel=True)
+    assert collector['recovery_payload'] == {}
+    assert collector['calls'][-1][:2] == ('DELETE', f'/investments/v1/control/recovery/{request_id}')
+
+
+@pytest.mark.parametrize('code,http_status', [('recovery_not_found', 404), ('recovery_in_progress', 409), ('recovery_expired', 410)])
+async def test_manual_verification_safe_errors_preserved(session, source_connection, collector, code, http_status):
+    from app.services.connection_source_service import recovery_action
+    collector['status']['manualVerificationAvailable'] = True
+    collector['recovery_status'] = http_status
+    collector['recovery'] = {'error': code, 'private': 'must not escape'}
+    with pytest.raises(SourceControlError) as error:
+        await recovery_action(session, source_connection.id, source_connection.workspace_id, uuid.uuid4())
+    assert error.value.code == code and error.value.status_code == http_status
+    assert 'must not escape' not in str(error.value)
+
+
+async def test_manual_verification_requires_advertised_capability(session, source_connection, collector):
+    from app.services.connection_source_service import recovery_action
+    with pytest.raises(SourceControlError) as error:
+        await recovery_action(session, source_connection.id, source_connection.workspace_id, uuid.uuid4())
+    assert error.value.code == 'source_controls_unsupported'
+    assert all(method == 'GET' for method, _, _ in collector['calls'])

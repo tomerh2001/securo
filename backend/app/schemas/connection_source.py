@@ -1,5 +1,6 @@
 """Sanitized source controls, separate from importing already collected data."""
 from datetime import datetime
+import uuid
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -62,6 +63,22 @@ class CollectorControlStatus(ControlModel):
     schedule: CollectionSchedule
     automaticOtp: AutomaticOtpStatus
     session: SourceSession
+    manualVerificationAvailable: bool = False
+    recovery: "SourceRecovery | None" = None
+
+
+class SourceRecovery(ControlModel):
+    challengeId: uuid.UUID
+    state: Literal["starting", "awaiting_code", "verifying", "complete", "failed", "canceled", "expired"]
+    expiresAt: datetime | None
+    errorCode: Literal[
+        "OTP_REQUIRED", "COLLECTION_FAILED", "RECOVERY_CANCELED",
+        "OTP_EXPIRED", "RECOVERY_INTERRUPTED",
+    ] | None
+
+
+class SourceRecoveryResponse(ControlModel):
+    recovery: SourceRecovery
 
 
 class SavedDataImportStatus(ControlModel):

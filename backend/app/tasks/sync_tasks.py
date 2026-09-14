@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.worker import celery_app
 from app.core.config import get_settings
 from app.models.bank_connection import BankConnection
+from app.models.connection_operation import ConnectionOperation, ACTIVE_STATUSES
 from app.providers.base import ProviderNotConfiguredError
 from app.services import connection_service
 
@@ -36,6 +37,10 @@ async def _sync_all() -> int:
                     BankConnection.id, BankConnection.user_id, BankConnection.last_sync_at
                 ).where(
                     BankConnection.status.in_(["active", "error"]),
+                    ~select(ConnectionOperation.id).where(
+                        ConnectionOperation.connection_id == BankConnection.id,
+                        ConnectionOperation.status.in_(ACTIVE_STATUSES),
+                    ).exists(),
                     (BankConnection.last_sync_at < cutoff)
                     | (BankConnection.last_sync_at.is_(None)),
                 )

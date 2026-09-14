@@ -1697,6 +1697,8 @@ async def sync_connection(
     workspace_id: uuid.UUID,
     requesting_user_id: uuid.UUID,
     trigger_provider_refresh: bool = False,
+    *,
+    raise_on_rate_limit: bool = False,
 ) -> tuple[BankConnection, int]:
     connection = await get_connection(session, connection_id, workspace_id)
     if not connection:
@@ -2219,6 +2221,10 @@ async def sync_connection(
             conn = await session.get(BankConnection, connection_id)
             if conn and conn.status != "expired":
                 conn.status = "active"
+        if raise_on_rate_limit:
+            # A user-facing durable operation must report that no import
+            # completed; the scheduler may quietly defer its routine read.
+            raise
         # The row can vanish if the connection was deleted mid-sync. Fall back
         # to the one we already hold rather than raising: re-raising here would
         # escape as a 500, which is exactly what this handler exists to avoid.
