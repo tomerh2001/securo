@@ -3,7 +3,7 @@ from datetime import date as _date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.schemas.investment_feed import ArchiveValuationProvenance
 
 
@@ -51,6 +51,7 @@ class AssetCreate(BaseModel):
 
 class AssetUpdate(BaseModel):
     name: Optional[str] = None
+    display_name: Optional[str] = Field(default=None, max_length=255)
     type: Optional[str] = None
     currency: Optional[str] = None
     units: Optional[Decimal] = None
@@ -72,11 +73,19 @@ class AssetUpdate(BaseModel):
     ticker: Optional[str] = None
     ticker_exchange: Optional[str] = None
 
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def normalize_display_name(cls, value):
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
 
 class AssetRead(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     name: str
+    display_name: Optional[str] = None
     type: str
     currency: str
     units: Optional[float] = None

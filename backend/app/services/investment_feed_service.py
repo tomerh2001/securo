@@ -269,7 +269,7 @@ async def enrich_account_identifiers(
 
 
 async def get_activities(session: AsyncSession, workspace_id: uuid.UUID, asset_id: uuid.UUID | None = None):
-    query = select(AssetActivity, Asset.name).join(Asset, AssetActivity.asset_id == Asset.id).where(
+    query = select(AssetActivity, Asset.effective_name).join(Asset, AssetActivity.asset_id == Asset.id).where(
         AssetActivity.workspace_id == workspace_id, Asset.workspace_id == workspace_id,
     )
     if asset_id is not None:

@@ -2359,6 +2359,10 @@
     "reportPeriodUnknown": "Reporting period not supplied"
   },
   "investmentAccounts": {
+    "rename": "Renomear conta",
+    "renameHint": "Escolha o nome exibido para esta conta. Ele será mantido quando o provedor atualizar a conta.",
+    "useProviderName": "Usar nome do provedor",
+    "renameError": "Não foi possível salvar o nome da conta.",
     "availability": "Withdrawal availability",
     "availableAmount": "{{amount}} available",
     "providerEstimate": "Provider estimate",

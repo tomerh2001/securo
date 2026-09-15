@@ -59,6 +59,7 @@ import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { getAssetProfit } from '@/lib/asset-profit'
 import { formatCurrency } from '@/lib/format'
+import { investmentAccountLabel } from '@/lib/investment-account-utils'
 
 // Renders a logo image when one is available, falling back to the asset's
 // type-based Lucide icon on missing URL or broken image. Uses the type's
@@ -948,9 +949,10 @@ export default function AssetsPage() {
               {rows.map(asset => {
                 const account = investmentAccountList?.find(item => item.id === asset.id)
                 const productKind = account?.product_kind ?? asset.investment_details!.product_kind
+                const productName = t(`investments.productKinds.${productKind}`, t('investments.productKinds.investment'))
                 return <Link key={asset.id} to={`/accounts/investments/${asset.id}`} className="group flex items-center gap-3 px-4 py-4 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary sm:px-5">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium break-words">{t(`investments.productKinds.${productKind}`, t('investments.productKinds.investment'))}{account?.masked_number && <span className="ms-2 font-normal text-muted-foreground tabular-nums">{mask(`••${account.masked_number}`)}</span>}</p>
+                    <p className="text-sm font-medium break-words" dir="auto">{account ? investmentAccountLabel(account, productName) : asset.display_name ? mask(asset.display_name) : productName}{account?.masked_number && <span className="ms-2 font-normal text-muted-foreground tabular-nums">{mask(`••${account.masked_number}`)}</span>}</p>
                     <p className="mt-1 text-xs text-muted-foreground">{t(`investments.liquidity.${asset.investment_details!.liquidity.status}`, t('investments.liquidity.unknown'))}</p>
                   </div>
                   <div className="shrink-0 text-right tabular-nums">

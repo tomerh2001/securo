@@ -50,7 +50,7 @@ async def _to_read(
             balance_primary = float((Decimal(str(balance)) * rate).quantize(Decimal("0.01")))
     masked_number = metadata.get("masked_number")
     return InvestmentAccountRead(
-        id=asset.id, name=asset.name, currency=asset.currency,
+        id=asset.id, name=asset.effective_name, display_name=asset.display_name, currency=asset.currency,
         balance=balance, balance_primary=balance_primary, product_kind=details.product_kind,
         masked_number=masked_number[-4:] if isinstance(masked_number, str) and masked_number else None,
         connection_id=connection.id if connection else None, group_id=asset.group_id,
@@ -73,7 +73,7 @@ async def list_accounts(
         query = query.where(Asset.connection_id == connection_id)
     if not include_archived:
         query = query.where(Asset.is_archived == False, Asset.sell_date.is_(None))
-    rows = (await session.execute(query.order_by(Asset.position, Asset.name, Asset.id))).all()
+    rows = (await session.execute(query.order_by(Asset.position, Asset.effective_name, Asset.id))).all()
     return [await _to_read(session, asset, connection, primary_currency)
             for asset, connection in rows if (asset.external_metadata or {}).get("investment_details")]
 
@@ -109,7 +109,7 @@ async def get_activities(
                                   .offset((page - 1) * limit).limit(limit))).all()
     return InvestmentAccountActivitiesRead(
         items=[InvestmentAccountActivityRead.model_validate({
-            "id": row.id, "asset_id": asset.id, "asset_name": asset.name, "kind": row.kind,
+            "id": row.id, "asset_id": asset.id, "asset_name": asset.effective_name, "kind": row.kind,
             "date": row.date, "date_kind": row.date_kind, "amount": float(row.amount),
             "currency": row.currency, "description": row.description, "source_id": row.source_id,
             "observed_at": row.observed_at,

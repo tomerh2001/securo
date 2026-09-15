@@ -50,7 +50,9 @@ async def _linked_name(session: AsyncSession, model: type, item_id: uuid.UUID | 
         return None
     if isinstance(item, Account):
         return get_account_name(item)
-    # Callers pass Asset / AssetGroup, both of which have `.name`. Stay
+    if isinstance(item, Asset):
+        return item.effective_name
+    # Other callers pass AssetGroup, which has `.name`. Stay
     # tolerant rather than raising: a goal whose link we can't name should
     # render without one, not 500 the whole goals list.
     return getattr(item, "name", None)

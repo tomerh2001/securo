@@ -3,12 +3,12 @@ import { screen, waitFor, within } from '@testing-library/react'
 import InvestmentAccountDetailPage from '@/pages/investment-account-detail'
 import { assets, investmentAccounts } from '@/lib/api'
 import { renderWithProviders } from '@/test/utils'
-import type { AssetActivity, InvestmentAccount } from '@/types'
+import type { Asset, AssetActivity, InvestmentAccount } from '@/types'
 
-const modules = vi.hoisted(() => ({ accounts: true }))
-vi.mock('@/contexts/workspace-context', () => ({ useWorkspace: () => ({ hasModule: (module: string) => module !== 'accounts' || modules.accounts }) }))
+const modules = vi.hoisted(() => ({ accounts: true, canWrite: true }))
+vi.mock('@/contexts/workspace-context', () => ({ useWorkspace: () => ({ canWrite: modules.canWrite, hasModule: (module: string) => module !== 'accounts' || modules.accounts }) }))
 
-vi.mock('@/lib/api', () => ({ assets: { values: vi.fn() }, investmentAccounts: { get: vi.fn(), activities: vi.fn(), executions: vi.fn(), historyCoverage: vi.fn() } }))
+vi.mock('@/lib/api', () => ({ assets: { values: vi.fn(), update: vi.fn() }, investmentAccounts: { get: vi.fn(), activities: vi.fn(), executions: vi.fn(), historyCoverage: vi.fn() } }))
 vi.mock('@/hooks/use-display-locale', () => ({ useDisplayLocale: () => 'en-US', useDateLocale: () => 'en-US' }))
 vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ user: { preferences: { currency_display: 'ILS' } } }) }))
 vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => false }))
@@ -33,6 +33,7 @@ const rows: AssetActivity[] = Array.from({ length: 6 }, (_, index) => ({
 beforeEach(() => {
   vi.clearAllMocks()
   modules.accounts = true
+  modules.canWrite = true
   vi.mocked(investmentAccounts.historyCoverage).mockResolvedValue({ account_id: account.id, account_kind: 'investment', balance_as_of: '2026-08-31', opening_balance_date: null, streams: [], note_codes: [] })
   vi.mocked(investmentAccounts.get).mockResolvedValue(account)
   vi.mocked(investmentAccounts.activities).mockResolvedValue({ items: rows, total: rows.length, page: 1, limit: 5, available_years: [2026], available_kinds: ['employee_contribution'] })
@@ -43,6 +44,71 @@ beforeEach(() => {
 const options = { route: '/accounts/investments/pension-one', path: '/accounts/investments/:id' }
 
 describe('InvestmentAccountDetailPage', () => {
+  it('saves only the chosen name and renders it with one account ending', async () => {
+    const renamed = { ...account, name: 'Clal Pension ··4321', display_name: 'Clal Pension ··4321' }
+    vi.mocked(assets.update).mockImplementation(async () => {
+      vi.mocked(investmentAccounts.get).mockResolvedValue(renamed)
+      return { id: account.id, name: renamed.name, display_name: renamed.display_name } as Asset
+    })
+    const { user } = renderWithProviders(<InvestmentAccountDetailPage />, options)
+    await user.click(await screen.findByRole('button', { name: 'Rename account' }))
+    const dialog = screen.getByRole('dialog', { name: 'Rename account' })
+    const input = within(dialog).getByRole('textbox', { name: 'Name' })
+    await user.clear(input)
+    await user.type(input, '  Clal Pension ··4321  ')
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(assets.update).toHaveBeenCalledExactlyOnceWith(account.id, { display_name: renamed.name })
+    const heading = screen.getByRole('heading', { level: 1 })
+    expect(heading).toHaveTextContent('Clal Pension••4321')
+    expect(heading.textContent?.match(/4321/g)).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: /add transaction|transfer|buy|sell/i })).not.toBeInTheDocument()
+  })
+
+  it('keeps the name editable and displays a failed save', async () => {
+    vi.mocked(assets.update).mockRejectedValue({ response: { data: { detail: 'You no longer have permission to edit this account.' } } })
+    const { user } = renderWithProviders(<InvestmentAccountDetailPage />, options)
+    await user.click(await screen.findByRole('button', { name: 'Rename account' }))
+    const dialog = screen.getByRole('dialog')
+    const input = within(dialog).getByRole('textbox', { name: 'Name' })
+    await user.clear(input)
+    await user.type(input, 'My pension')
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('You no longer have permission to edit this account.')
+    expect(input).toHaveValue('My pension')
+    expect(input).toBeEnabled()
+  })
+
+  it('can reset a saved name to the provider name', async () => {
+    vi.mocked(investmentAccounts.get).mockResolvedValue({ ...account, name: 'Clal Pension ··4321', display_name: 'Clal Pension ··4321' })
+    vi.mocked(assets.update).mockImplementation(async () => {
+      vi.mocked(investmentAccounts.get).mockResolvedValue(account)
+      return { id: account.id, name: account.name, display_name: null } as Asset
+    })
+    const { user } = renderWithProviders(<InvestmentAccountDetailPage />, options)
+    await user.click(await screen.findByRole('button', { name: 'Rename account' }))
+    await user.click(screen.getByRole('button', { name: 'Use provider name' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(assets.update).toHaveBeenCalledExactlyOnceWith(account.id, { display_name: null })
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Pension••4321')
+  })
+
+  it('hides rename controls for a viewer', async () => {
+    modules.canWrite = false
+    renderWithProviders(<InvestmentAccountDetailPage />, options)
+    await screen.findByRole('heading', { level: 1 })
+    expect(screen.queryByRole('button', { name: 'Rename account' })).not.toBeInTheDocument()
+    expect(assets.update).not.toHaveBeenCalled()
+  })
+
+  it('hides the account ending from aliases in privacy mode', async () => {
+    localStorage.setItem('privacyMode', 'true')
+    vi.mocked(investmentAccounts.get).mockResolvedValue({ ...account, name: 'Clal Pension ··4321', display_name: 'Clal Pension ··4321' })
+    renderWithProviders(<InvestmentAccountDetailPage />, options)
+    expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('Clal Pension•••••')
+    expect(screen.queryByText(/4321/)).not.toBeInTheDocument()
+  })
+
   it('shows the account identity, one balance and a bounded activity preview', async () => {
     renderWithProviders(<InvestmentAccountDetailPage />, options)
     expect(await screen.findByRole('heading', { level: 1 })).toHaveTextContent('Pension••4321')

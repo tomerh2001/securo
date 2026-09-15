@@ -32,6 +32,7 @@ class InvestmentDetails(BaseModel):
 class InvestmentAccountRead(BaseModel):
     id: uuid.UUID
     name: str
+    display_name: str | None = None
     currency: str
     balance: float | None
     balance_primary: float | None
