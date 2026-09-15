@@ -5,8 +5,23 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
+  update-automation:
+    name: Update Automation Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: backend/.python-version
+      - name: Validate release and deployment guards
+        run: python -m unittest discover -s backend/scripts/tests -p "test_*.py" -v
+
   backend-tests:
     name: Backend Tests
     runs-on: ubuntu-latest
