@@ -5,7 +5,7 @@ import { ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { assets, investmentAccounts } from '@/lib/api'
 import { formatCurrency } from '@/lib/format'
-import { formatInvestmentDate, investmentSourceState } from '@/lib/investment-account-utils'
+import { formatInvestmentDate, investmentAccountLabel, investmentSourceState } from '@/lib/investment-account-utils'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
@@ -23,6 +23,7 @@ import type { InvestmentAccount } from '@/types'
 import { AccountWorkspace, AccountWorkspaceHeader, AccountSectionTabs, AccountConnectionPanel, AccountDataStatus, AccountBalanceSummary } from '@/components/account-workspace'
 import { AccountHistory } from '@/components/account-history'
 import { InvestmentExecutionHistory } from '@/components/investment-executions'
+import { InvestmentAccountRename } from '@/components/investment-account-rename'
 
 function AccountOverview({ account, onActivity }: { account: InvestmentAccount; onActivity: () => void }) {
   const { t } = useTranslation()
@@ -99,7 +100,7 @@ function AccountOverview({ account, onActivity }: { account: InvestmentAccount; 
         <dl className="grid gap-4 border-t border-border p-4 text-sm sm:grid-cols-2">
           <div className="sm:col-span-2">
             <dt className="mb-1 text-xs text-muted-foreground">{t('investmentAccounts.plan', { defaultValue: 'Plan' })}</dt>
-            <dd className="break-words" dir="auto">{account.name}</dd>
+            <dd className="break-words" dir="auto">{investmentAccountLabel(account, account.display_name ? t(`investments.productKinds.${account.product_kind}`) : account.name)}</dd>
           </div>
           <div>
             <dt className="mb-1 text-xs text-muted-foreground">{t('investmentAccounts.lastUpdated', { defaultValue: 'Last updated' })}</dt>
@@ -152,6 +153,8 @@ export default function InvestmentAccountDetailPage() {
     </div>
   )
   const { details } = account
+  const productName = t(`investments.productKinds.${account.product_kind}`, t('investments.productKinds.investment'))
+  const accountName = investmentAccountLabel(account, productName)
   const sourceState = investmentSourceState([account])
   const needsAttention = sourceState !== 'current'
   const notice = {
@@ -165,14 +168,17 @@ export default function InvestmentAccountDetailPage() {
   return (
     <AccountWorkspace>
       <AccountWorkspaceHeader
-        title={<>{t(`investments.productKinds.${account.product_kind}`, t('investments.productKinds.investment'))}{account.masked_number && <span className="ml-3 text-base font-normal text-muted-foreground tabular-nums">{mask(`••${account.masked_number}`)}</span>}</>}
-        subtitle={<span dir="auto">{account.name}</span>}
+        title={<>{accountName}{account.masked_number && <span className="ml-3 text-base font-normal text-muted-foreground tabular-nums">{mask(`••${account.masked_number}`)}</span>}</>}
+        subtitle={<span dir="auto">{account.display_name ? productName : account.name}</span>}
         breadcrumbs={[
           { label: t(accountsEnabled ? 'accounts.title' : 'assets.title'), to: accountsEnabled ? '/accounts' : '/assets' },
           ...(account.connection_id ? [{ label: account.institution_name || account.provider, ...(accountsEnabled ? { to: `/connections/${account.connection_id}` } : {}) }] : []),
-          { label: t(`investments.productKinds.${account.product_kind}`, t('investments.productKinds.investment')) },
+          { label: accountName },
         ]}
-        actions={accountsEnabled && account.connection_id && <Button variant="outline" onClick={() => changeTab('connection')}>{t('accountWorkspace.connectionStatus')}</Button>}
+        actions={<>
+          <InvestmentAccountRename key={account.id} account={account} />
+          {accountsEnabled && account.connection_id && <Button variant="outline" onClick={() => changeTab('connection')}>{t('accountWorkspace.connectionStatus')}</Button>}
+        </>}
       />
       <AccountDataStatus attention={needsAttention} connectionId={accountsEnabled ? account.connection_id : null} message={notice || t('connectionHealth.currentHelp')} />
       <AccountBalanceSummary label={t('investmentAccounts.currentBalance')}

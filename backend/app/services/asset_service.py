@@ -140,7 +140,8 @@ def _asset_to_read(
     return AssetRead(
         id=asset.id,
         user_id=asset.user_id,
-        name=asset.name,
+        name=asset.effective_name,
+        display_name=asset.display_name,
         type=asset.type,
         currency=asset.currency,
         units=float(asset.units) if asset.units is not None else None,
@@ -394,7 +395,7 @@ async def get_assets(
     query = select(Asset).where(Asset.workspace_id == workspace_id)
     if not include_archived:
         query = query.where(Asset.is_archived == False)
-    query = query.order_by(Asset.position, Asset.name)
+    query = query.order_by(Asset.position, Asset.effective_name)
 
     result = await session.execute(query)
     assets = list(result.scalars().all())
@@ -648,7 +649,7 @@ async def update_asset(
         return None
 
     update_data = data.model_dump(exclude_unset=True)
-    if asset.source == "investment_feed" and set(update_data) - {"group_id", "position", "is_archived"}:
+    if asset.source == "investment_feed" and set(update_data) - {"display_name", "group_id", "position", "is_archived"}:
         raise HTTPException(status_code=400, detail="Collector investment fields are read-only")
     # Prevent changing valuation_method on existing assets
     update_data.pop("valuation_method", None)
@@ -860,7 +861,7 @@ async def get_portfolio_trend(
         select(Asset).where(
             Asset.workspace_id == workspace_id,
             Asset.is_archived == False,
-        ).order_by(Asset.position, Asset.name)
+        ).order_by(Asset.position, Asset.effective_name)
     )
     active_assets = list(result.scalars().all())
 
@@ -883,7 +884,7 @@ async def get_portfolio_trend(
         aid = str(asset.id)
         asset_meta.append({
             "id": aid,
-            "name": asset.name,
+            "name": asset.effective_name,
             "type": asset.type,
             "group_id": str(asset.group_id) if asset.group_id else None,
         })

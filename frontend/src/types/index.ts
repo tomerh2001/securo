@@ -820,6 +820,7 @@ export interface Asset {
   id: string
   user_id: string
   name: string
+  display_name?: string | null
   type: string
   currency: string
   units: number | null
@@ -883,6 +884,7 @@ export interface InvestmentDetails {
 export interface InvestmentAccount {
   id: string
   name: string
+  display_name?: string | null
   currency: string
   balance: number | null
   balance_primary: number | null

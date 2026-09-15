@@ -3,9 +3,11 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, text
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, func, text
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.database import Base
 
@@ -35,6 +37,9 @@ class Asset(Base):
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
     name: Mapped[str] = mapped_column(String(255))
+    # User-owned label; provider sync continues to maintain the original name.
+    display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
     type: Mapped[str] = mapped_column(String(50))  # real_estate, vehicle, valuable, investment, other
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     units: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=6), nullable=True)
@@ -101,3 +106,12 @@ class Asset(Base):
         back_populates="asset", cascade="all, delete-orphan"
     )
     group: Mapped[Optional["AssetGroup"]] = relationship(back_populates="assets")
+
+    @hybrid_property
+    def effective_name(self) -> str:
+        return self.display_name or self.name
+
+    @effective_name.inplace.expression
+    @classmethod
+    def _effective_name_expression(cls) -> ColumnElement[str]:
+        return func.coalesce(cls.display_name, cls.name)

@@ -210,7 +210,7 @@ async def _net_worth_at(
             assets_total += converted_val
             composition.append(ReportCompositionItem(
                 key=str(asset.id),
-                label=asset.name,
+                label=asset.effective_name,
                 value=converted_val,
                 color=_ASSET_TYPE_COLORS.get(asset.type, "#6B7280"),
                 group="assets",

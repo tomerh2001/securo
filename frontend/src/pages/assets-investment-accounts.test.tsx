@@ -56,6 +56,23 @@ beforeEach(() => {
 })
 
 describe('investment accounts in the portfolio', () => {
+  it('keeps a saved asset name when investment account metadata is unavailable', async () => {
+    setPortfolio([{ ...managedAssets[0], display_name: 'Clal Pension ··4321', name: 'Clal Pension ··4321' }])
+    vi.mocked(investmentAccounts.list).mockRejectedValue(new Error('Metadata unavailable'))
+    renderWithProviders(<AssetsPage />)
+    expect(await screen.findByRole('link', { name: /Clal Pension ··4321/ })).toHaveAttribute('href', '/accounts/investments/pension')
+  })
+
+  it('uses the saved name in the investment list and keeps its ending private', async () => {
+    localStorage.setItem('privacyMode', 'true')
+    vi.mocked(investmentAccounts.list).mockResolvedValue(projections.map(account => ({
+      ...account, name: `Clal Pension ··${account.masked_number}`, display_name: `Clal Pension ··${account.masked_number}`,
+    })))
+    renderWithProviders(<AssetsPage />)
+    await waitFor(() => expect(screen.getAllByRole('link', { name: /Clal Pension/ })).toHaveLength(3))
+    expect(screen.queryByText(/4321|4322|4323/)).not.toBeInTheDocument()
+  })
+
   it('shows institution and account links while keeping the existing total exactly once', async () => {
     renderWithProviders(<AssetsPage />)
     expect(await screen.findByRole('link', { name: 'Example provider' })).toHaveAttribute('href', '/connections/connection-one')

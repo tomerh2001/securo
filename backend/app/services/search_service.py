@@ -238,9 +238,10 @@ async def search_all(
         select(Asset)
         .where(
             Asset.workspace_id == workspace_id,
-            Asset.name.ilike(pattern, escape="\\"),
+            or_(Asset.name.ilike(pattern, escape="\\"),
+                Asset.display_name.ilike(pattern, escape="\\")),
         )
-        .order_by(Asset.is_archived.asc(), Asset.position.asc(), Asset.name.asc())
+        .order_by(Asset.is_archived.asc(), Asset.position.asc(), Asset.effective_name.asc())
         .limit(per_type_limit)
     )
     for asset in asset_result.scalars().all():
@@ -248,7 +249,7 @@ async def search_all(
             SearchHit(
                 type="asset",
                 id=str(asset.id),
-                label=asset.name,
+                label=asset.effective_name,
                 subtitle=asset.type,
                 currency=asset.currency,
                 meta={"is_archived": asset.is_archived},

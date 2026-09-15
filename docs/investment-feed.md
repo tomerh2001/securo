@@ -116,8 +116,9 @@ Accounts lists each product beneath its connection. `/connections/:id` is the
 connection's focused destination, including its bank/card accounts if any.
 The route uses a connection ID because a bank aggregator can span more than one
 institution. `/accounts/investments/:id` opens a product's Overview, Activity and
-Reports. Account labels use product kind and the verified final four account
-identifier characters; original provider names are secondary details. Assets
+Reports. Account labels use a saved display name when one exists, with the verified
+final four account identifier characters as context. Otherwise lists use the
+product kind and detail views retain the provider's name. Assets
 keeps the portfolio total and compact account links, separate from share-trading
 columns and controls. Modules and collection membership govern visible links.
 
@@ -127,6 +128,17 @@ archived/sold accounts by default. The detail endpoint accepts a direct asset ID
 its facets describe all nonzero account activity and remain stable while filtering.
 All queries enforce workspace ownership, including connection filters. Converted
 balances use real cached FX rates; missing conversion rates produce null values.
+
+Account names can be changed from the investment account page or with
+`PATCH /api/assets/:id` and `{"display_name": "My account name"}`. The name is
+trimmed, limited to 255 characters, and stored separately from the provider-owned
+`Asset.name`. A null or blank display name clears the override. Feed refreshes
+can update the provider label without replacing a saved display name. Account,
+asset, activity, search, report and linked-goal labels use the same effective name.
+Source identities and financial fields remain unchanged; collector-owned amounts
+and product attributes are still read-only. Identical provider labels do not imply
+duplicate products: check the stable product identity and masked account number
+before renaming or grouping them.
 
 Current source status and balance valuation date remain separate. Reading a
 cached feed does not make provider data fresh. Unknown balances are unavailable,

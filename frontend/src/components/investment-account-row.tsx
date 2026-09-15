@@ -4,6 +4,7 @@ import { ChevronRight, Landmark, Sprout, TrendingUp } from 'lucide-react'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { formatCurrency } from '@/lib/format'
+import { investmentAccountLabel } from '@/lib/investment-account-utils'
 import type { InvestmentAccount } from '@/types'
 
 export function InvestmentAccountRow({ account }: { account: InvestmentAccount }) {
@@ -13,6 +14,7 @@ export function InvestmentAccountRow({ account }: { account: InvestmentAccount }
   const { mask } = usePrivacyMode()
   const Icon = account.product_kind === 'pension' ? Landmark : account.product_kind === 'keren_hishtalmut' ? Sprout : TrendingUp
   const asOf = account.details.valuation_date
+  const productName = t(`investments.productKinds.${account.product_kind}`)
   return (
     <Link
       to={`/accounts/investments/${account.id}`}
@@ -20,8 +22,8 @@ export function InvestmentAccountRow({ account }: { account: InvestmentAccount }
     >
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground"><Icon size={18} /></span>
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium leading-snug break-words" dir="auto">{t(`investments.productKinds.${account.product_kind}`)}</span>
-        {account.masked_number ? <span className="mt-1 block text-xs text-muted-foreground" dir="ltr">{mask(`•• ${account.masked_number}`)}</span> : <span className="mt-1 block line-clamp-2 text-xs text-muted-foreground" dir="auto">{account.name}</span>}
+        <span className="block text-sm font-medium leading-snug break-words" dir="auto">{investmentAccountLabel(account, productName)}</span>
+        {account.masked_number ? <span className="mt-1 block text-xs text-muted-foreground" dir="ltr">{mask(`•• ${account.masked_number}`)}</span> : <span className="mt-1 block line-clamp-2 text-xs text-muted-foreground" dir="auto">{account.display_name ? productName : account.name}</span>}
       </span>
       <span className="shrink-0 text-right">
         <span className="block text-sm font-semibold tabular-nums">

@@ -1,5 +1,15 @@
 import type { InvestmentAccount } from '@/types'
 
+/** Render the account ending separately so privacy mode can hide it. */
+export function investmentAccountLabel(account: InvestmentAccount, fallback: string): string {
+  const name = account.display_name?.trim()
+  if (!name) return fallback
+  const number = account.masked_number
+  if (!number || !/^\d+$/.test(number)) return name
+  if (name === number) return fallback
+  return name.replace(new RegExp(`[\\s·•*–—-]+${number}$`), '').trim() || fallback
+}
+
 export function filterInvestmentAccounts(accounts: InvestmentAccount[], walletIds: string[] | null) {
   return walletIds === null ? accounts : accounts.filter(account => account.group_id !== null && walletIds.includes(account.group_id))
 }
