@@ -507,8 +507,8 @@ export default function AssetsPage() {
   // retain the existing editing and buy/sell tools. Both remain in the same
   // portfolio total, so showing an investment account never adds a balance.
   const investmentAssets = assetsList?.filter(a => !!a.investment_details && !a.is_archived) ?? []
-  const ordinaryAssets = assetsList?.filter(a => !a.investment_details) ?? []
-  const activeAssets = ordinaryAssets.filter(a => !a.sell_date && !a.is_archived)
+  const ordinaryAssets = useMemo(() => assetsList?.filter(a => !a.investment_details) ?? [], [assetsList])
+  const activeAssets = useMemo(() => ordinaryAssets.filter(a => !a.sell_date && !a.is_archived), [ordinaryAssets])
   const soldAssets = ordinaryAssets.filter(a => a.sell_date)
   const investmentOnly = investmentAssets.length > 0 && ordinaryAssets.length === 0
   const visibleTab = investmentOnly ? 'holdings' : activeTab
@@ -2844,7 +2844,9 @@ function AddHoldingTransactionDialog({
   const [fee, setFee] = useState('')
   const [date, setDate] = useState(localDateString)
 
-  useEffect(() => {
+  const [formSource, setFormSource] = useState<{ assetId: typeof assetId } | null>(null)
+  if (!formSource || formSource.assetId !== assetId) {
+    setFormSource({ assetId })
     if (assetId) {
       setKind('buy')
       setQuantity('')
@@ -2852,7 +2854,7 @@ function AddHoldingTransactionDialog({
       setFee('')
       setDate(localDateString())
     }
-  }, [assetId])
+  }
 
   const saveMutation = useMutation({
     mutationFn: () =>
